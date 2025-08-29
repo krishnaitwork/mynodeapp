@@ -3,7 +3,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node gateway.js"
+  "start": "node gateway.js",
+  "import-currentuser-certs": "node import-currentuser-certs.js",
+  "regenerate-selfsigned": "node regenerate-selfsigned.js",
+  "regen-import": "node regenerate-selfsigned.js && node import-currentuser-certs.js",
+  "regen-import-start": "node regenerate-selfsigned.js && node import-currentuser-certs.js && node gateway.js"
   },
   "dependencies": {
     "acme-client": "^5.0.0",

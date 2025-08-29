@@ -84,7 +84,8 @@ async function ensureCert(hostname) {
   try {
     const [key, csr] = await Promise.all([
       acme.forge.createPrivateKey(),
-      acme.forge.createCsr({ commonName: hostname })
+      // Include altNames so CSR requests include SAN DNS entries
+      acme.forge.createCsr({ commonName: hostname, altNames: [hostname] })
     ]);
 
     const cert = await client.auto({
@@ -141,11 +142,15 @@ function selfSigned(hostname = "localhost") {
     return { key, cert };
   }
 
-  // Generate new self-signed certificate
-  const { cert, private: key } = selfsigned.generate([
-    { name: "commonName", value: hostname },
-    { name: "subjectAltName", value: `DNS:${hostname}` }
-  ], { days: 365 });
+  // Generate new self-signed certificate with explicit Subject Alternative Name (SAN)
+  const attrs = [{ name: 'commonName', value: hostname }];
+  const extensions = [{
+    name: 'subjectAltName',
+    altNames: [{ type: 2, value: hostname }] // type 2 == DNS
+  }];
+  const pems = selfsigned.generate(attrs, { days: 365, extensions });
+  const cert = pems.cert;
+  const key = pems.private;
 
   // Save certificate and key as separate files
   fs.writeFileSync(certPath, cert);

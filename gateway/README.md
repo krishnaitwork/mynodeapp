@@ -422,3 +422,58 @@ MIT License - feel free to use in your projects!
 ---
 
 **Need Help?** Check the troubleshooting section or create an issue with your specific error message.
+
+## ✅ Local dev: regenerate, import and run (quick commands)
+
+If you're developing locally and using hostnames like `local.console`, `app.local.console`, `api.local.console`, follow these steps to regenerate SAN-enabled self-signed certs, import them into the CurrentUser Trusted Root, and start the gateway.
+
+1) (Optional) Add hostnames to your hosts file (requires admin):
+
+```powershell
+# Run PowerShell as Administrator
+Add-Content -Path C:\Windows\System32\drivers\etc\hosts -Value "127.0.0.1 local.console"
+Add-Content -Path C:\Windows\System32\drivers\etc\hosts -Value "127.0.0.1 app.local.console"
+Add-Content -Path C:\Windows\System32\drivers\etc\hosts -Value "127.0.0.1 api.local.console"
+```
+
+2) Regenerate self-signed certs with SAN DNS entries:
+
+```powershell
+cd C:\KP\Git\nodejs\mynodeapp\gateway
+node regenerate-selfsigned.js
+```
+
+3) Import the regenerated `.crt` files into CurrentUser Trusted Root (removes existing certs with same Subject first):
+
+```powershell
+npm run import-currentuser-certs
+# or: node import-currentuser-certs.js
+```
+
+4) Start the gateway (uses per-host certs via SNI):
+
+```powershell
+npm start
+# or: node gateway.js
+```
+
+5) Verify in browser:
+
+- Open: https://local.console:4443 (or the hostname you configured)
+- If you changed to port 443, use that instead.
+
+Verification commands:
+
+```powershell
+# List imported certs matching the host
+Get-ChildItem Cert:\CurrentUser\Root | Where-Object { $_.Subject -like '*local.console*' } | Format-List Subject,Thumbprint,NotAfter
+
+# Inspect SAN inside a cert file
+certutil -dump .\storage\local.console.crt | Select-String -Pattern "Subject Alternative Name","CN="
+```
+
+Notes:
+- Firefox may use its own trust store; import there separately if needed.
+- Importing into `LocalMachine` store requires elevation; CurrentUser avoids admin.
+- If the browser still warns, restart the browser after import.
+
