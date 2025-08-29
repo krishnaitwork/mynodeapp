@@ -1,0 +1,10 @@
+[
+  {
+    "domain": "api.local.console",
+    "altNames": ["api.local.console", "api.alias.local"],
+    "organization": "Console",
+    "organizationalUnit": "KP",
+    "email": "krishnapawk@gmail.com",
+    "days": 1365
+  }
+]

@@ -77,15 +77,19 @@ async function ensureCert(hostname) {
   // For local domains, use self-signed certificates
   if (hostname.includes('.local') || hostname.includes('localhost') || hostname.includes('.console')) {
     console.log(`Using self-signed certificate for local domain: ${hostname}`);
-    return selfSigned(hostname);
+    const app = hostMap.get(hostname);
+    const alt = (app && Array.isArray(app.altNames) && app.altNames.length) ? app.altNames : [hostname];
+    return selfSigned(hostname, alt);
   }
 
   // HTTP-01 challenge handler uses `challenges` Map via the HTTP server
   try {
+    const app = hostMap.get(hostname);
+    const altNames = (app && Array.isArray(app.altNames) && app.altNames.length) ? app.altNames : [hostname];
     const [key, csr] = await Promise.all([
       acme.forge.createPrivateKey(),
       // Include altNames so CSR requests include SAN DNS entries
-      acme.forge.createCsr({ commonName: hostname, altNames: [hostname] })
+      acme.forge.createCsr({ commonName: hostname, altNames: altNames })
     ]);
 
     const cert = await client.auto({
@@ -143,7 +147,11 @@ function selfSigned(hostname = "localhost") {
   }
 
   // Generate new self-signed certificate with explicit Subject Alternative Name (SAN)
-  const attrs = [{ name: 'commonName', value: hostname }];
+  const attrs = [
+    { name: 'commonName', value: hostname },
+    { name: 'organizationName', value: 'Console' },
+    { name: 'organizationalUnitName', value: 'KP' }
+  ];
   const extensions = [{
     name: 'subjectAltName',
     altNames: [{ type: 2, value: hostname }] // type 2 == DNS

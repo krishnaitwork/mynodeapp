@@ -12,20 +12,23 @@
   "apps": [
     {
       "host": "local.console",
+      "altNames": ["local.console"],
       "cwd": "c:/KP/Git/nodejs/mynodeapp/apps/app1",
-  "start": "npm start",
+      "start": "npm start",
       "healthUrl": "http://127.0.0.1:3000/health",
       "port": 3000
     },
     {
       "host": "app.local.console",
+      "altNames": ["app.local.console"],
       "cwd": "c:/KP/Git/nodejs/mynodeapp/apps/app2",
-  "start": "npm start",
+      "start": "npm start",
       "healthUrl": "http://127.0.0.1:3001/health",
       "port": 3001
     },
     {
       "host": "api.local.console",
+      "altNames": ["api.local.console", "api.alias.local"],
       "cwd": "c:/KP/Git/nodejs/mynodeapp/apps/app3",
       "start": "npm start",
       "healthUrl": "http://127.0.0.1:3002/health",
