@@ -23,7 +23,7 @@ function generate(hostname) {
     name: 'subjectAltName',
     altNames: [{ type: 2, value: hostname }]
   }];
-  const pems = selfsigned.generate(attrs, { days: 365, extensions });
+  const pems = selfsigned.generate(attrs, { days: 1365, extensions });
 
   fs.writeFileSync(certPath, pems.cert);
   fs.writeFileSync(keyPath, pems.private);
