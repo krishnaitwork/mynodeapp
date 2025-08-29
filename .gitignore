@@ -1,0 +1,59 @@
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Logs
+logs
+*.log
+pids
+*.pid
+
+# Runtime data
+dist/
+build/
+coverage/
+
+# Env files
+.env
+.env.*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDEs
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+
+# Gateway certificate storage and generated certs/keys
+gateway/storage/
+**/storage/
+*.crt
+*.key
+*.pfx
+*.pem
+
+# Local OS generated files
+*.swp
+
+# Mac Thumbnails
+._*
+
+# Optional npm cache
+.npm
+
+# Lockfiles: keep package-lock.json if you want deterministic installs
+# Uncomment to ignore if you prefer not to commit lockfiles
+# package-lock.json
+
+# Misc
+coverage/
+node-repl-history
+
+# Ignore test artifacts
+test-output/

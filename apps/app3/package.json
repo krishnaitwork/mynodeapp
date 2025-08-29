@@ -1,0 +1,30 @@
+{
+  "name": "app3",
+  "version": "1.0.0",
+  "description": "App 3 - REST API with Swagger UI documentation",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "test": "node test-api.js",
+    "test:api": "node test-api.js"
+  },
+  "keywords": [
+    "nodejs",
+    "express",
+    "swagger",
+    "api",
+    "rest",
+    "documentation"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^5.1.0",
+    "swagger-jsdoc": "^6.2.8",
+    "swagger-ui-express": "^5.0.1"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}

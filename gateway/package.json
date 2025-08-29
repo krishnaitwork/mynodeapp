@@ -1,0 +1,17 @@
+{
+  "name": "node-gateway",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node gateway.js"
+  },
+  "dependencies": {
+    "acme-client": "^5.0.0",
+    "http-proxy": "^1.18.1",
+    "mri": "^1.2.0",
+    "selfsigned": "^2.4.1",
+    "serve-static": "^1.15.0",
+    "sturdy-websocket": "^0.2.1",
+    "undici": "^6.19.8"
+  }
+}

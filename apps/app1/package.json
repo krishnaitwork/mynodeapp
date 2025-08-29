@@ -1,0 +1,14 @@
+{
+  "name": "app1",
+  "version": "1.0.0",
+  "description": "App 1 - minimal app with Swagger health endpoint",
+  "main": "server-express.js",
+  "scripts": {
+    "start": "node server-express.js"
+  },
+  "dependencies": {
+    "express": "^4.18.0",
+    "swagger-jsdoc": "^6.2.0",
+    "swagger-ui-express": "^5.0.0"
+  }
+}
