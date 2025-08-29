@@ -31,7 +31,10 @@ function startApp(app) {
     setTimeout(() => startApp(app), 2000);
   });
 }
-for (const app of cfg.apps) startApp(app);
+for (const app of cfg.apps) {
+  // Only start apps that provide a start command (backend processes). Proxy/static-only entries won't be spawned.
+  if (app.start) startApp(app);
+}
 
 /* ----------------------- Health wait (optional) -------------------------- */
 async function waitHealthy(app, timeoutMs = 15000) {
@@ -177,6 +180,29 @@ function selfSigned(hostname = "localhost") {
 /* ----------------------- Reverse proxy & SNI TLS ------------------------- */
 const proxy = httpProxy.createProxyServer({ xfwd: true });
 
+// Rewrite backend Location headers and Set-Cookie domains so the browser only sees the public host
+proxy.on('proxyRes', (proxyRes, req, res) => {
+  try {
+    const publicHost = (req.headers.host || '').split(':')[0];
+    const upstreamHost = req._upstreamHost;
+    const upstreamProtocol = req._upstreamProtocol || 'http';
+
+    // Rewrite Location headers from upstream -> public host
+    const loc = proxyRes.headers['location'];
+    if (loc && upstreamHost && publicHost) {
+      proxyRes.headers['location'] = loc.replace(`${upstreamProtocol}://${upstreamHost}`, `https://${publicHost}`);
+    }
+
+    // Rewrite Set-Cookie: remove Domain attribute so cookie becomes host-only for public host
+    const sc = proxyRes.headers['set-cookie'];
+    if (sc && Array.isArray(sc)) {
+      proxyRes.headers['set-cookie'] = sc.map(cookie => cookie.replace(/;?\s*Domain=[^;]+/i, ''));
+    }
+  } catch (e) {
+    // best-effort, don't break the response on rewrite errors
+  }
+});
+
 const hostMap = new Map(cfg.apps.map(a => [a.host.toLowerCase(), a]));
 
 // HTTP server:
@@ -230,8 +256,58 @@ const httpsSrv = https.createServer({
 
   // Ensure app is healthy before proxying
   await waitHealthy(app);
+  // If this app is configured to serve static files, do that instead of proxying
+  if (app.staticDir) {
+    try {
+      // Serve files from the configured staticDir. Protect against path traversal.
+      const urlPath = decodeURIComponent((req.url || '/').split('?')[0]);
+      const safeSuffix = path.normalize(urlPath).replace(/^([\\/]+|\.\.)+/g, '');
+      let filePath = path.join(app.staticDir, safeSuffix);
+      // If the path is a directory, serve index.html
+      let stat;
+      try { stat = fs.statSync(filePath); } catch (e) { stat = null; }
+      if (stat && stat.isDirectory()) filePath = path.join(filePath, 'index.html');
+      // Fallback to index.html for SPA routing if file doesn't exist
+      if (!stat || !fs.existsSync(filePath)) {
+        filePath = path.join(app.staticDir, 'index.html');
+        if (!fs.existsSync(filePath)) {
+          res.writeHead(404); res.end('Not found'); return;
+        }
+      }
+      // Minimal mime type mapping
+      const ext = path.extname(filePath).toLowerCase();
+      const mimes = {
+        '.html': 'text/html; charset=utf-8', '.js': 'application/javascript; charset=utf-8', '.mjs': 'application/javascript; charset=utf-8',
+        '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+        '.gif': 'image/gif', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.map': 'application/octet-stream', '.wasm': 'application/wasm'
+      };
+      const ct = mimes[ext] || 'application/octet-stream';
+      const stream = fs.createReadStream(filePath);
+      res.writeHead(200, { 'Content-Type': ct, 'Cache-Control': 'no-cache' });
+      stream.pipe(res);
+      stream.on('error', (err) => { console.error('Static file stream error', err); if (!res.headersSent) res.writeHead(500); res.end('Server error'); });
+      return;
+    } catch (e) {
+      console.error('Static serve error for', app.staticDir, e);
+      res.writeHead(500); res.end('Server error');
+      return;
+    }
+  }
 
-  proxy.web(req, res, { target: `http://127.0.0.1:${app.port}` }, (err) => {
+  // Build upstream target (support app.upstream or local port fallback)
+  const upstream = app.upstream || (app.port ? { protocol: 'http', host: '127.0.0.1', port: app.port } : { protocol: 'http', host: '127.0.0.1', port: 80 });
+  const target = `${upstream.protocol}://${upstream.host}:${upstream.port}`;
+  req._upstreamHost = upstream.host;
+  req._upstreamProtocol = upstream.protocol;
+
+  // Respect preserveHost: when true, forward the original Host header to upstream
+  const proxyOpts = { target, changeOrigin: !app.preserveHost };
+  if (upstream.protocol === 'https') proxyOpts.secure = upstream.rejectUnauthorized !== false;
+  if (app.preserveHost && req.headers && req.headers.host) {
+    proxyOpts.headers = Object.assign({}, req.headers, { Host: req.headers.host });
+  }
+
+  proxy.web(req, res, proxyOpts, (err) => {
     console.error(`[proxy:${host}]`, err?.message);
     if (!res.headersSent) {
       res.writeHead(502);
@@ -245,7 +321,17 @@ httpsSrv.on("upgrade", (req, socket, head) => {
   const host = (req.headers.host || "").toLowerCase().split(":")[0];
   const app = hostMap.get(host);
   if (!app) return socket.destroy();
-  proxy.ws(req, socket, head, { target: `http://127.0.0.1:${app.port}` });
+
+  // Build upstream target for websocket proxy
+  const upstream = app.upstream || (app.port ? { protocol: 'http', host: '127.0.0.1', port: app.port } : { protocol: 'http', host: '127.0.0.1', port: 80 });
+  const target = `${upstream.protocol}://${upstream.host}:${upstream.port}`;
+  const wsOpts = { target, changeOrigin: !app.preserveHost };
+  if (upstream.protocol === 'https') wsOpts.secure = upstream.rejectUnauthorized !== false;
+  if (app.preserveHost && req.headers && req.headers.host) {
+    wsOpts.headers = Object.assign({}, req.headers, { Host: req.headers.host });
+  }
+
+  proxy.ws(req, socket, head, wsOpts);
 });
 
 /* ------------------------------ Start servers ---------------------------- */

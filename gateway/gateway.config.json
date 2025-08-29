@@ -13,6 +13,7 @@
     {
       "host": "local.console",
       "altNames": ["local.console"],
+      "preserveHost": false,
       "cwd": "c:/KP/Git/nodejs/mynodeapp/apps/app1",
       "start": "npm start",
       "healthUrl": "http://127.0.0.1:3000/health",
@@ -21,6 +22,7 @@
     {
       "host": "app.local.console",
       "altNames": ["app.local.console"],
+      "preserveHost": false,
       "cwd": "c:/KP/Git/nodejs/mynodeapp/apps/app2",
       "start": "npm start",
       "healthUrl": "http://127.0.0.1:3001/health",
@@ -29,10 +31,54 @@
     {
       "host": "api.local.console",
       "altNames": ["api.local.console", "api.alias.local"],
+      "preserveHost": false,
       "cwd": "c:/KP/Git/nodejs/mynodeapp/apps/app3",
       "start": "npm start",
       "healthUrl": "http://127.0.0.1:3002/health",
       "port": 3002
+    },
+    {
+      "host": "app.pca.ca",
+      "altNames": ["app.pca.ca"],
+      "preserveHost": true,
+      "upstream": {
+        "protocol": "https",
+        "host": "app.abc.com",
+        "port": 443,
+        "rejectUnauthorized": true
+      },
+      "healthUrl": "https://app.abc.com/health"
+    },
+    {
+      "host": "app.login.pca.ca",
+      "altNames": ["app.login.pca.ca"],
+      "preserveHost": true,
+      "upstream": {
+        "protocol": "https",
+        "host": "app.login.abc.com",
+        "port": 443,
+        "rejectUnauthorized": true
+      },
+      "healthUrl": "https://app.login.abc.com/health"
+    }, 
+    {
+      "# dev-proxy": "Proxy a React/Vite dev server running on localhost:50001",
+      "host": "local.myreactapp.com",
+      "altNames": ["local.myreactapp.com"],
+      "upstream": {
+        "protocol": "http",
+        "host": "127.0.0.1",
+        "port": 50001
+      },
+      "# preserveHost": "optional boolean (when true gateway forwards original Host header to upstream)",
+      "healthUrl": "http://127.0.0.1:50001/health"
+    },
+
+    {
+      "# static-site": "Serve a built React app (spa) from disk. Useful for production or a built prototype",
+      "host": "local.myreactapp.com",
+      "altNames": ["local.myreactapp.com"],
+      "staticDir": "C:/path/to/myreactapp/build"
     }
   ]
 }
