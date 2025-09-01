@@ -17,15 +17,34 @@ if (!fs.existsSync(storeDir)) {
   process.exit(1);
 }
 
-const crtFiles = fs.readdirSync(storeDir).filter(f => f.toLowerCase().endsWith('.crt'));
+// Get domains from config to limit certificate operations to only configured domains
+const configDomains = new Set();
+for (const app of cfg.apps) {
+  if (app.host) configDomains.add(app.host.toLowerCase());
+  if (app.altNames && Array.isArray(app.altNames)) {
+    for (const alt of app.altNames) configDomains.add(alt.toLowerCase());
+  }
+}
+
+console.log('Configured domains:', Array.from(configDomains).join(', '));
+
+// Only process certificate files for domains that are actually in the config
+const allCrtFiles = fs.readdirSync(storeDir).filter(f => f.toLowerCase().endsWith('.crt'));
+const crtFiles = allCrtFiles.filter(f => {
+  const domain = f.replace(/\.crt$/i, '').toLowerCase();
+  return configDomains.has(domain);
+});
+
 if (crtFiles.length === 0) {
-  console.log('No .crt files found in', storeDir);
+  console.log('No .crt files found for configured domains in', storeDir);
+  console.log('Available .crt files:', allCrtFiles.join(', ') || '(none)');
   process.exit(0);
 }
 
-console.log('Importing certificates from', storeDir);
+console.log('Importing certificates for configured domains from', storeDir);
+console.log('Processing files:', crtFiles.join(', '));
 
-// Phase 1: read CN and SANs from all certificate files and build a list of target names
+// Phase 1: read CN and SANs from certificate files for configured domains only
 const targets = [];
 for (const crt of crtFiles) {
   const full = path.join(storeDir, crt);
@@ -103,8 +122,15 @@ const toDelete = new Set();
 for (const e of entries) {
   if (!e.subject) continue;
   for (const t of targets) {
-    if (t.cn && e.subject.includes(`CN=${t.cn}`)) toDelete.add(e.thumbprint);
-    for (const dns of t.dns) if (dns && e.subject.includes(dns)) toDelete.add(e.thumbprint);
+    // Only delete if CN or DNS names match configured domains
+    if (t.cn && configDomains.has(t.cn.toLowerCase()) && e.subject.includes(`CN=${t.cn}`)) {
+      toDelete.add(e.thumbprint);
+    }
+    for (const dns of t.dns) {
+      if (dns && configDomains.has(dns.toLowerCase()) && e.subject.includes(dns)) {
+        toDelete.add(e.thumbprint);
+      }
+    }
   }
 }
 
