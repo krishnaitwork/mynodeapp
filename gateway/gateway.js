@@ -183,14 +183,64 @@ const proxy = httpProxy.createProxyServer({ xfwd: true });
 // Rewrite backend Location headers and Set-Cookie domains so the browser only sees the public host
 proxy.on('proxyRes', (proxyRes, req, res) => {
   try {
-    const publicHost = (req.headers.host || '').split(':')[0];
+    const publicHostFull = (req.headers.host || '');
+    const publicHost = publicHostFull.split(':')[0];
     const upstreamHost = req._upstreamHost;
     const upstreamProtocol = req._upstreamProtocol || 'http';
 
     // Rewrite Location headers from upstream -> public host
     const loc = proxyRes.headers['location'];
     if (loc && upstreamHost && publicHost) {
-      proxyRes.headers['location'] = loc.replace(`${upstreamProtocol}://${upstreamHost}`, `https://${publicHost}`);
+      try {
+        // Parse the location; allow relative URLs
+        const u = new URL(loc, `${upstreamProtocol}://${upstreamHost}`);
+        // Only rewrite if the Location points back to the upstream host (or an internal host)
+        const locHost = u.hostname;
+        const isInternalTarget = locHost === upstreamHost || locHost === '127.0.0.1' || locHost === 'localhost' || locHost === '::1';
+        const ensureCallbackPort = (urlObj) => {
+          try {
+            const cb = urlObj.searchParams.get('callback');
+            if (!cb) return;
+            const cbUrl = new URL(cb);
+            // If callback hostname matches publicHost but has no port, add the incoming port
+            if ((cbUrl.hostname === publicHost) && !cbUrl.port) {
+              // Determine incoming port: prefer Host header port, fallback to socket localPort
+              let incomingPort;
+              try {
+                const hostHeader = req.headers.host || '';
+                const hhParts = hostHeader.split(':');
+                if (hhParts.length === 2) incomingPort = hhParts[1];
+              } catch (e) {}
+              if (!incomingPort && req.socket && req.socket.localPort) incomingPort = String(req.socket.localPort);
+              if (incomingPort) {
+                cbUrl.port = incomingPort;
+                urlObj.searchParams.set('callback', cbUrl.toString());
+              }
+            }
+          } catch (e) {
+            // ignore callback parse errors
+          }
+        };
+
+        if (isInternalTarget) {
+          ensureCallbackPort(u);
+          const newLoc = `https://${publicHostFull}${u.pathname}${u.search}${u.hash}`;
+          proxyRes.headers['location'] = newLoc;
+        } else {
+          // Leave public/external hostnames untouched (they may refer to other public services)
+          ensureCallbackPort(u);
+          proxyRes.headers['location'] = u.toString();
+        }
+      } catch (e) {
+        // Fallback: only replace if it starts with the upstream host/protocol
+        try {
+          if (loc.startsWith(`${upstreamProtocol}://${upstreamHost}`)) {
+            proxyRes.headers['location'] = loc.replace(new RegExp(`^${upstreamProtocol}://${upstreamHost}(:\\d+)?`), `https://${publicHostFull}`);
+          }
+        } catch (e2) {
+          // give up and leave the original loc
+        }
+      }
     }
 
     // Rewrite Set-Cookie: remove Domain attribute so cookie becomes host-only for public host

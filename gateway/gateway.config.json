@@ -71,7 +71,7 @@
         "port": 50001
       },
       "# preserveHost": "optional boolean (when true gateway forwards original Host header to upstream)",
-      "healthUrl": "http://127.0.0.1:50001/health"
+      "healthUrl": "http://127.0.0.1:5001/health"
     },
 
     {
