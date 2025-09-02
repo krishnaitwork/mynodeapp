@@ -38,16 +38,25 @@
       "port": 3002
     },
     {
+      "host": "app.abc.com",
+      "altNames": ["app.abc.com", "app.abc.local"],
+      "preserveHost": false,
+      "cwd": "c:/KP/Git/nodejs/mynodeapp/apps/app4",
+      "start": "npm start",
+      "healthUrl": "http://127.0.0.1:3006/health",
+      "port": 3006
+    },
+    {
       "host": "app.pca.ca",
       "altNames": ["app.pca.ca"],
       "preserveHost": true,
       "upstream": {
-        "protocol": "https",
-        "host": "app.abc.com",
-        "port": 443,
-        "rejectUnauthorized": true
+        "protocol": "http",
+        "host": "127.0.0.1",
+        "port": 3006,
+        "rejectUnauthorized": false
       },
-      "healthUrl": "https://app.abc.com/health"
+      "healthUrl": "http://127.0.0.1:3006/health"
     },
     {
       "host": "app.login.pca.ca",
@@ -55,11 +64,11 @@
       "preserveHost": true,
       "upstream": {
         "protocol": "https",
-        "host": "app.login.abc.com",
-        "port": 443,
-        "rejectUnauthorized": true
+        "host": "app.abc.com",
+        "port": 4443,
+        "rejectUnauthorized": false
       },
-      "healthUrl": "https://app.login.abc.com/health"
+      "healthUrl": "https://app.abc.com:4443/health"
     }, 
     {
       "# dev-proxy": "Proxy a React/Vite dev server running on localhost:50001",
