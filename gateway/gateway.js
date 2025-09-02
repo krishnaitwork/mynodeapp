@@ -78,7 +78,7 @@ async function ensureCert(hostname) {
   }
 
   // For local domains, use self-signed certificates
-  if (hostname.includes('.local') || hostname.includes('localhost') || hostname.includes('.console')) {
+  if (hostname.includes('.local') || (hostname.includes('local.') || hostname.includes('localhost') || hostname.includes('.console'))) {
     console.log(`Using self-signed certificate for local domain: ${hostname}`);
     const app = hostMap.get(hostname);
     const alt = (app && Array.isArray(app.altNames) && app.altNames.length) ? app.altNames : [hostname];

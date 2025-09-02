@@ -96,6 +96,7 @@ for (const t of targets) console.log('-', path.basename(t.file), 'CN=', t.cn, 'S
 
 // Phase 2: list store entries and compute deletions for any target CN/SAN
 console.log('\nScanning CurrentUser Root store for existing matching certificates...');
+console.log('Will only match certificates for these configured domains:', Array.from(configDomains).join(', '));
 const listRes = spawnSync('certutil.exe', ['-user', '-store', 'Root'], { encoding: 'utf8', maxBuffer: 20 * 1024 * 1024 });
 if (listRes.error) console.error('certutil spawn error', listRes.error);
 if (listRes.stderr) process.stderr.write(listRes.stderr);
@@ -118,17 +119,31 @@ for (const line of lines) {
 }
 if (current.thumbprint) entries.push(current);
 
+console.log(`\nFound ${entries.length} certificates in CurrentUser Root store`);
+console.log('Certificate subjects found:');
+for (const e of entries) {
+  if (e.subject) console.log(`  - ${e.subject.substring(0, 80)}${e.subject.length > 80 ? '...' : ''}`);
+}
+
 const toDelete = new Set();
 for (const e of entries) {
   if (!e.subject) continue;
   for (const t of targets) {
-    // Only delete if CN or DNS names match configured domains
+    // Only delete if CN matches exactly (and is in configured domains)
     if (t.cn && configDomains.has(t.cn.toLowerCase()) && e.subject.includes(`CN=${t.cn}`)) {
+      console.log(`Match found for CN: ${t.cn} in subject: ${e.subject}`);
       toDelete.add(e.thumbprint);
     }
+    
+    // For SAN matching, be more precise - match DNS names in certificate extensions, not subject string
     for (const dns of t.dns) {
-      if (dns && configDomains.has(dns.toLowerCase()) && e.subject.includes(dns)) {
-        toDelete.add(e.thumbprint);
+      if (dns && configDomains.has(dns.toLowerCase())) {
+        // More precise matching: look for exact CN match or check if it's a SAN-based cert
+        if (e.subject.includes(`CN=${dns}`) || 
+            (t.cn === dns && e.subject.includes(`CN=${t.cn}`))) {
+          console.log(`Match found for SAN DNS: ${dns} in subject: ${e.subject}`);
+          toDelete.add(e.thumbprint);
+        }
       }
     }
   }
