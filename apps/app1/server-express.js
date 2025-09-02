@@ -19,15 +19,53 @@ fs.mkdirSync(mediaDir, { recursive: true });
  * GET /img/:file - proxy authentication to app2 and serve file when authorized
  */
 app.get('/img/:file', (req, res) => {
-  const file = req.params.file;
-  const imgPath = `/img/${file}`;
-  // Redirect browser to the public auth host (app2) so gateway routes correctly.
-  const callback = `https://local.console:4443/auth-callback`;
-  const u = new URL('https://app.local.console:4443/auth');
-  u.searchParams.set('path', imgPath);
-  u.searchParams.set('callback', callback);
-  // Redirect browser to auth provider (app2). It will redirect back to /auth-callback
-  res.redirect(302, u.toString());
+  try {
+    const file = req.params.file;
+    const imgPath = `/img/${file}`;
+    
+    // Build callback and auth URLs dynamically from incoming request headers
+    // Use X-Forwarded-* headers when available (set by gateway), fallback to direct headers
+    const forwardedProto = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+    const forwardedHost = req.headers['x-forwarded-host'] || req.headers.host || '127.0.0.1:3000';
+    
+    // Extract the scheme and use the first one if comma-separated
+    const scheme = forwardedProto.split(',')[0].trim();
+    
+    // Build callback URL using the same host/port that the browser used
+    const callback = `${scheme}://${forwardedHost}/auth-callback`;
+    
+    // For auth host, try to derive the auth domain:
+    // - If host is an IP (127.0.0.1, localhost), use the same host but different port/path
+    // - If host is a domain (local.console), prefix with 'app.'
+    const hostOnly = forwardedHost.split(':')[0];
+    let authHost;
+    
+    if (hostOnly === '127.0.0.1' || hostOnly === 'localhost' || /^\d+\.\d+\.\d+\.\d+$/.test(hostOnly)) {
+      // For IP addresses, we can't do subdomain routing, so use same host
+      // You'll need to configure your gateway to route based on path or port
+      authHost = forwardedHost;
+    } else {
+      // For domain names, prefix with 'app.' for auth service
+      authHost = hostOnly.startsWith('app.') ? hostOnly : `app.${hostOnly}`;
+      // Preserve port if present in original host
+      const portMatch = forwardedHost.match(/:(\d+)$/);
+      if (portMatch) authHost += portMatch[0];
+    }
+    
+    const authUrl = `${scheme}://${authHost}/auth`;
+    const u = new URL(authUrl);
+    u.searchParams.set('path', imgPath);
+    u.searchParams.set('callback', callback);
+    
+    console.log(`[app1] Redirecting to auth: ${u.toString()}`);
+    console.log(`[app1] Callback will be: ${callback}`);
+    
+    // Redirect browser to auth provider (app2). It will redirect back to /auth-callback
+    res.redirect(302, u.toString());
+  } catch (err) {
+    console.error('[app1] /img handler error:', err);
+    res.status(500).send('Internal Server Error');
+  }
 });
 
 /**
