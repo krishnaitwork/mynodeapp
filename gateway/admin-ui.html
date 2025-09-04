@@ -1,0 +1,288 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"/><title>Gateway Admin</title><meta name="viewport" content="width=device-width,initial-scale=1" />
+<style>
+:root{
+  /* Dark theme (default) */
+  --bg:#0d1014;--panel:#161b22;--panel-alt:#1d252e;--border:#29313a;--text:#e4e8ef;--muted:#93a1b5;--accent:#3b82f6;--accent2:#6366f1;--accent-grad:linear-gradient(120deg,#2563eb,#3b82f6 55%,#6366f1);--danger:#ef4444;--ok:#10b981;--warn:#f59e0b;--radius:14px;--mono:ui-monospace,Consolas,Menlo,monospace;--shadow:0 4px 14px -4px rgba(0,0,0,.4);
+  /* Theme transition */
+  --transition-duration: 0.3s;
+}
+
+/* Light theme */
+[data-theme="light"] {
+  --bg:#f8fafc;--panel:#ffffff;--panel-alt:#f1f5f9;--border:#e2e8f0;--text:#1e293b;--muted:#64748b;--accent:#3b82f6;--accent2:#6366f1;--accent-grad:linear-gradient(120deg,#2563eb,#3b82f6 55%,#6366f1);--danger:#ef4444;--ok:#059669;--warn:#d97706;--radius:14px;--mono:ui-monospace,Consolas,Menlo,monospace;--shadow:0 4px 14px -4px rgba(0,0,0,.1);
+}
+
+*{box-sizing:border-box;-webkit-font-smoothing:antialiased}
+body{margin:0;font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;display:flex;flex-direction:column;transition:background var(--transition-duration) ease, color var(--transition-duration) ease}
+[data-theme="light"] body {background:linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);}
+header{position:sticky;top:0;z-index:40;background:rgba(15,18,23,.82);backdrop-filter:blur(8px);display:flex;gap:20px;align-items:center;padding:14px 26px;border-bottom:1px solid var(--border);transition:all var(--transition-duration) ease}
+[data-theme="light"] header {background:rgba(255,255,255,.9);}
+header h1{margin:0;font-size:20px;font-weight:600;letter-spacing:.5px;background:var(--accent-grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+
+/* Theme Switcher */
+.theme-switcher{margin-left:auto;margin-right:10px;position:relative}
+.theme-toggle{width:50px;height:26px;border-radius:13px;border:1px solid var(--border);background:var(--panel-alt);cursor:pointer;position:relative;transition:all var(--transition-duration) ease;overflow:hidden}
+.theme-toggle::before{content:'🌙';position:absolute;left:3px;top:50%;transform:translateY(-50%);font-size:14px;z-index:2;transition:opacity var(--transition-duration) ease}
+.theme-toggle::after{content:'☀️';position:absolute;right:3px;top:50%;transform:translateY(-50%);font-size:14px;z-index:2;opacity:0;transition:opacity var(--transition-duration) ease}
+[data-theme="light"] .theme-toggle::before {opacity:0}
+[data-theme="light"] .theme-toggle::after {opacity:1}
+.theme-slider{position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:var(--accent);transition:transform var(--transition-duration) ease;box-shadow:0 2px 4px rgba(0,0,0,0.2)}
+[data-theme="light"] .theme-slider {transform:translateX(22px)}
+
+#statusLine{font-size:12px;display:flex;align-items:center;gap:10px}
+.pill{padding:4px 10px;border-radius:999px;font-size:11px;font-weight:600;letter-spacing:.5px;background:var(--panel-alt);color:var(--muted);display:inline-flex;align-items:center;gap:6px;border:1px solid var(--border);transition:all var(--transition-duration) ease}
+.pill.ok{background:rgba(16,185,129,.15);color:var(--ok);border-color:var(--ok)}
+.pill.bad{background:rgba(239,68,68,.15);color:var(--danger);border-color:var(--danger)}
+.pill.ws{background:rgba(59,130,246,.15);color:var(--accent);border-color:var(--accent)}
+main{flex:1;display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:26px;padding:28px;max-width:1600px;width:100%;margin:0 auto}
+section{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:18px 20px;display:flex;flex-direction:column;min-height:120px;box-shadow:var(--shadow);position:relative;overflow:hidden;transition:all var(--transition-duration) ease}
+section h2{margin:0 0 14px;font-size:15px;font-weight:600;letter-spacing:.5px;display:flex;align-items:center;gap:10px}
+section h2 .small{font-size:11px;font-weight:500;color:var(--muted)}
+.apps-wrap{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px;width:100%;}
+.app-card{background:var(--panel-alt);border:1px solid var(--border);border-radius:12px;padding:12px 12px 14px;display:flex;flex-direction:column;gap:10px;position:relative;min-height:135px;transition:all var(--transition-duration) ease}
+.app-card:hover{border-color:var(--accent);transform:translateY(-2px)}
+.app-head{display:flex;align-items:flex-start;gap:10px}
+.app-host{font-weight:600;font-size:14px;word-break:break-all;flex:1}
+.badge{font-size:10px;text-transform:uppercase;letter-spacing:.7px;padding:3px 6px;border-radius:5px;background:var(--panel);color:var(--muted);font-weight:600;border:1px solid var(--border);transition:all var(--transition-duration) ease}
+.badge.dis{background:var(--panel);color:var(--muted)}
+.badge.ph{background:rgba(79,70,229,.15);color:#a5b4fc;border-color:rgba(79,70,229,.3)}
+.badge.run{background:rgba(59,130,246,.18);color:var(--accent);border-color:var(--accent)}
+.badge.stop{background:var(--panel);color:var(--muted)}
+.health-dot{width:12px;height:12px;border-radius:50%;background:var(--muted);box-shadow:0 0 0 3px rgba(0,0,0,.1);position:relative;transition:all var(--transition-duration) ease}
+[data-theme="light"] .health-dot {box-shadow:0 0 0 3px rgba(0,0,0,.05)}
+.link-btn{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border:1px solid var(--border);border-radius:7px;background:var(--panel);color:var(--accent);font-size:13px;text-decoration:none;transition:all var(--transition-duration) ease}
+.link-btn:hover{background:var(--panel-alt);border-color:var(--accent);color:var(--accent)}
+.link-btn:active{transform:translateY(1px)}
+.app-card.running{border-color:var(--accent);}
+.app-card.running:hover{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.health-dot.ok{background:var(--ok)}
+.health-dot.bad{background:var(--danger)}
+.health-dot.anim::after{content:"";position:absolute;inset:0;border-radius:inherit;box-shadow:0 0 0 0 rgba(59,130,246,.7);animation:pulse 2s infinite}
+@keyframes pulse{to{box-shadow:0 0 0 14px rgba(59,130,246,0)}}
+.actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+button{background:var(--panel);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:500;display:inline-flex;align-items:center;gap:6px;transition:all var(--transition-duration) ease}
+button.primary{background:var(--accent-grad);border:1px solid var(--accent);color:#fff}
+button.danger{background:var(--danger);border-color:var(--danger);color:#fff}
+button.secondary{background:var(--panel-alt);border-color:var(--border)}
+button:hover{filter:brightness(1.1);transform:translateY(-1px)}
+button:active{transform:translateY(1px)}
+button.small{padding:4px 8px;font-size:11px}
+.meta{display:flex;gap:10px;flex-wrap:wrap;font-size:11px;color:var(--muted);line-height:1.3}
+.meta span{display:inline-flex;align-items:center;gap:4px}
+.filter-bar{display:flex;gap:12px;margin:0 0 10px;flex-wrap:wrap}
+.filter-bar input{background:var(--panel-alt);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:8px;font-size:13px;min-width:220px;outline:none;font-family:var(--mono);transition:all var(--transition-duration) ease}
+.filter-bar input:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(59,130,246,.25)}
+
+/* Enhanced Logs Section */
+#logsSec{min-height:400px;}
+#logBox{white-space:pre-wrap;font-family:var(--mono);background:var(--panel-alt);border:1px solid var(--border);flex:1;border-radius:10px;overflow:auto;font-size:12px;line-height:1.35;padding:14px;min-height:300px;transition:all var(--transition-duration) ease;position:relative}
+#logBox:empty::before{content:'📋 Select an app to view logs...';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:var(--muted);font-size:14px;text-align:center;opacity:0.7}
+.log-header{display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap}
+.log-header select{background:var(--panel-alt);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:6px 10px;font-size:12px;transition:all var(--transition-duration) ease}
+.log-line{margin:1px 0;padding:2px 0;border-radius:3px;transition:background-color 0.15s ease}
+.log-line:hover{background:rgba(59,130,246,0.1)}
+.log-line.error{background:rgba(239,68,68,0.1);border-left:3px solid var(--danger);padding-left:8px}
+.log-line.warn{background:rgba(217,119,6,0.1);border-left:3px solid var(--warn);padding-left:8px}
+.log-timestamp{color:var(--muted);font-size:11px}
+.log-stream{color:var(--accent);font-weight:600;font-size:11px}
+.log-content{color:var(--text)}
+
+form#create{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-top:6px}
+form#create label{display:flex;flex-direction:column;font-size:11px;font-weight:600;letter-spacing:.5px;gap:6px}
+form#create input{background:var(--panel-alt);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:7px 9px;font-size:12px;font-family:var(--mono);transition:all var(--transition-duration) ease}
+form#create input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 2px rgba(59,130,246,.25)}
+form#create button{grid-column:1/-1;margin-top:4px}
+.empty{padding:14px 4px;font-size:13px;opacity:.65}
+.fade-in{animation:fade .4s ease}
+@keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@media (max-width:980px){main{grid-template-columns:1fr;padding:18px}}
+</style></head>
+<body><header><h1>Gateway Admin</h1><div class="theme-switcher"><div class="theme-toggle" id="themeToggle"><div class="theme-slider"></div></div></div><div class="pill ws" id="wsState">WS…</div><div id="statusLine"></div></header>
+<main>
+	<section id="appsSec">
+		<h2>Applications <span class="small" id="appsCount"></span></h2>
+		<div class="filter-bar">
+			<input id="filterBox" placeholder="Filter hosts (regex ok)" />
+			<button class="secondary small" id="refreshBtn">Refresh</button>
+		</div>
+		<div class="apps-wrap" id="appsWrap"><div class="empty">Loading…</div></div>
+	</section>
+	<section id="logsSec"><h2>Logs</h2><div class="log-header"><select id="logSelect"><option value="">Select app…</option></select><button class="secondary small" id="clearLogs">Clear</button><button class="secondary small" id="followBtn" data-follow="1">Auto‑scroll: On</button></div><div id="logBox"></div></section>
+	<section id="addSec"><h2>Add / Update App</h2>
+			<form id="create">
+			<label>Host<input name="host" required placeholder="api.local.console" /></label>
+			<label>Start Cmd<input name="start" placeholder="npm start" /></label>
+			<label>CWD<input name="cwd" placeholder="c:/path/to/app" /></label>
+			<label>Port<input name="port" type="number" placeholder="3005" /></label>
+			<label>Health URL<input name="healthUrl" placeholder="http://127.0.0.1:3005/health" /></label>
+			<label>Alt Names<input name="altNames" placeholder="a.example.com,b.example.com" /></label>
+			<label>Upstream (proto://host:port)<input name="upstream" placeholder="https://internal:8443" /></label>
+			<label><span>Preserve Host</span><input name="preserveHost" type="checkbox" /></label>
+				<div style="display:flex;gap:10px;grid-column:1/-1">
+					<button type="submit" class="primary" id="saveBtn">Save App</button>
+					<button type="button" class="secondary" id="cancelEdit" style="display:none">Cancel Edit</button>
+				</div>
+		</form>
+	</section>
+</main>
+<script>
+// Theme Management
+const themeToggle = document.getElementById('themeToggle');
+const currentTheme = localStorage.getItem('theme') || 'dark';
+document.documentElement.setAttribute('data-theme', currentTheme);
+
+themeToggle.addEventListener('click', () => {
+  const newTheme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', newTheme);
+  localStorage.setItem('theme', newTheme);
+});
+
+const token=localStorage.getItem('adminToken')||prompt('Admin token (blank if none set)')||'';localStorage.setItem('adminToken',token);
+const hdr={'X-Admin-Token':token};
+const appsWrap=document.getElementById('appsWrap');
+const logBox=document.getElementById('logBox');
+const statusLine=document.getElementById('statusLine');
+const wsState=document.getElementById('wsState');
+const appsCount=document.getElementById('appsCount');
+const logSelect=document.getElementById('logSelect');
+const filterBox=document.getElementById('filterBox');
+const refreshBtn=document.getElementById('refreshBtn');
+const followBtn=document.getElementById('followBtn');
+let selHost=null;let lastApps=[];let editingHost=null;
+
+async function api(p,m,d){const r=await fetch(p,{method:m||'GET',headers:{...hdr,'Content-Type':'application/json'},body:d?JSON.stringify(d):undefined});if(!r.ok)throw new Error(await r.text());return r.json();}
+function fmtMs(ms){if(!ms)return '';const s=Math.floor(ms/1000);if(s<60)return s+'s';const m=Math.floor(s/60);if(m<60)return m+'m';const h=Math.floor(m/60);if(h<48)return h+'h';return Math.floor(h/24)+'d';}
+
+function render(apps){
+	lastApps=apps.map(a=>({...a}));
+	const filter=filterBox.value.trim();let r=lastApps;
+	if(filter){try{const rx=new RegExp(filter,'i');r=r.filter(a=>rx.test(a.host));}catch{r=r.filter(a=>a.host.includes(filter));}}
+	appsCount.textContent=`${r.length}/${lastApps.length}`;
+	if(!r.length){appsWrap.innerHTML='<div class="empty">No matches</div>';return;}
+	const samePort=location.port?`:${location.port}`:'';
+	appsWrap.innerHTML='';
+	for(const a of r){
+		const rt=a.runtime||{};const h=rt.health||{};const ok=h.healthy===true;const bad=h.healthy===false;const dotClass=ok?'health-dot ok':'health-dot '+(bad?'bad':'');
+		const uptime=fmtMs(rt.uptimeMs)||'';const alt=a.altNames&&a.altNames.length?`<span class=\"badge\" title=\"Alt Names: ${a.altNames.join(', ')}\">ALT ${a.altNames.length}</span>`:'';
+		const runBadge=rt.running?'<span class="badge run" data-run="1" title="Running">RUN</span>':'<span class="badge stop" data-run="0" title="Stopped">STOP</span>';
+		const runToggleLabel=rt.running?'Stop':'Start';
+		const appUrl=`https://${a.host}:4443/health`;
+		const div=document.createElement('div');
+		div.className='app-card fade-in'+(rt.running?' running':'');
+		if(rt.running && rt.uptimeMs) div.dataset.startedAt=Date.now()-rt.uptimeMs;
+		div.dataset.host=a.host;
+		div.innerHTML=`<div class="app-head"><div class="health-dot anim ${dotClass}" data-role="dot" title="${h.healthy===undefined?'no data':(ok?'healthy':'unhealthy')} ${h.statusCode||''}"></div><div class="app-host">${a.host}</div><a class="link-btn" href="${appUrl}" target="_blank" rel="noopener" title="Open ${a.host}">↗</a>${runBadge}${a.disabled?'<span class="badge dis">DISABLED</span>':''}${a.preserveHost?'<span class="badge ph">PH</span>':''}${alt}</div><div class="meta"><span>🚪 ${a.port||''}</span><span class="uptime" data-role="uptime">⏱️ ${uptime}</span><span class="health-code" data-role="code">${h.statusCode?`⚕ ${h.statusCode}`:''}</span></div><div class="actions"><button class="secondary small" data-act="logs">Logs</button><button class="small" data-act="runToggle" data-run-toggle="${rt.running?1:0}">${runToggleLabel}</button><button class="small secondary" data-act="restart">Restart</button><button class="small secondary" data-act="toggle">${a.disabled?'Enable':'Disable'}</button><button class="small" data-act="edit">Edit</button><button class="small danger" data-act="del">Del</button></div>`;
+		div.addEventListener('click',e=>{const act=e.target.getAttribute('data-act');if(!act)return;switch(act){case 'logs':loadLogs(a.host);break;case 'runToggle':{const running=e.target.getAttribute('data-run-toggle')==='1';doAct(a.host,running?'stop':'start');break;}case 'restart':doAct(a.host,'restart');break;case 'toggle':toggleEnable(a.host,a.disabled?1:0);break;case 'edit':editApp(a.host);break;case 'del':delApp(a.host);break;}});
+		appsWrap.appendChild(div);
+	}
+	const cur=logSelect.value;logSelect.innerHTML='<option value="">Select app…</option>'+lastApps.map(a=>`<option ${cur===a.host?'selected':''}>${a.host}</option>`).join('');
+}
+
+async function refresh(){try{const d=await api('/admin/apps');render(d.apps);}catch(e){statusLine.textContent='ERR '+e.message;}}
+async function doAct(h,a){try{await api(`/admin/apps/${h}/${a}`,'POST');statusLine.textContent=`${a} sent`;setTimeout(refresh,400);}catch(e){alert(e);}}
+async function toggleEnable(h,disabled){try{await api(`/admin/apps/${h}/${disabled?'enable':'disable'}`,'POST');statusLine.textContent='toggle sent';setTimeout(refresh,400);}catch(e){alert(e);}}
+async function delApp(h){if(!confirm('Delete '+h+'?'))return;try{await api(`/admin/apps/${h}`,'DELETE');refresh();}catch(e){alert(e);}}
+
+// Enhanced log loading with better formatting
+async function loadLogs(h){
+  if(!h)return;
+  selHost=h;
+  logSelect.value=h;
+  
+  // Show loading state
+  logBox.innerHTML = '<div style="text-align:center;color:var(--muted);padding:40px;">🔄 Loading logs...</div>';
+  
+  try {
+    const d=await api(`/admin/apps/${encodeURIComponent(h)}/logs?limit=300`);
+    logBox.innerHTML = ''; // Clear loading state
+    
+    if (!d.logs || d.logs.length === 0) {
+      logBox.innerHTML = '<div style="text-align:center;color:var(--muted);padding:40px;font-style:italic;">📋 No logs available for this app</div>';
+      return;
+    }
+    
+    d.logs.forEach(log => {
+      const logLine = document.createElement('div');
+      logLine.className = 'log-line';
+      
+      // Detect log levels
+      const line = log.line.toLowerCase();
+      if (line.includes('error') || line.includes('err:')) {
+        logLine.classList.add('error');
+      } else if (line.includes('warn') || line.includes('warning')) {
+        logLine.classList.add('warn');
+      }
+      
+      const timestamp = new Date(log.ts).toLocaleTimeString();
+      logLine.innerHTML = `<span class="log-timestamp">[${timestamp}]</span> <span class="log-stream">${log.stream}</span> <span class="log-content">${log.line}</span>`;
+      logBox.appendChild(logLine);
+    });
+    
+    if(followBtn.dataset.follow==='1') logBox.scrollTop=logBox.scrollHeight;
+    statusLine.textContent = `Loaded ${d.logs.length} log entries for ${h}`;
+  } catch(e) {
+    console.error('Log loading error:', e);
+    logBox.innerHTML = `<div style="text-align:center;color:var(--danger);padding:40px;">
+      <div>❌ Failed to load logs</div>
+      <div style="font-size:12px;margin-top:10px;color:var(--muted);">${e.message}</div>
+      <button onclick="loadLogs('${h}')" style="margin-top:10px;padding:8px 16px;">🔄 Retry</button>
+    </div>`;
+    statusLine.textContent = `Error loading logs for ${h}: ${e.message}`;
+  }
+}
+
+const form=document.getElementById('create');const hostInput=form.querySelector('input[name="host"]');const saveBtn=document.getElementById('saveBtn');const cancelEdit=document.getElementById('cancelEdit');
+form.addEventListener('submit',async e=>{e.preventDefault();const f=new FormData(e.target);const up=f.get('upstream');let upstream;if(up){try{const u=new URL(up);upstream={protocol:u.protocol.replace(':',''),host:u.hostname,port:parseInt(u.port||(u.protocol==='https:'?443:80),10)};}catch{alert('Bad upstream');return;}}const payload={start:f.get('start')||undefined,cwd:f.get('cwd')||undefined,port:f.get('port')?parseInt(f.get('port'),10):undefined,healthUrl:f.get('healthUrl')||undefined,preserveHost:!!f.get('preserveHost'),altNames:(f.get('altNames')||'').split(',').map(s=>s.trim()).filter(Boolean),upstream};if(!editingHost){payload.host=f.get('host');}try{if(editingHost){await api(`/admin/apps/${editingHost}`,'PATCH',payload);}else{await api('/admin/apps','POST',{host:f.get('host'),...payload});}resetEdit();refresh();}catch(err){alert(err);}});
+function editApp(host){const app=lastApps.find(a=>a.host===host);if(!app)return;editingHost=host;hostInput.value=app.host;hostInput.readOnly=true;form.querySelector('input[name="start"]').value=app.start||'';form.querySelector('input[name="cwd"]').value=app.cwd||'';form.querySelector('input[name="port"]').value=app.port||'';form.querySelector('input[name="healthUrl"]').value=app.healthUrl||'';form.querySelector('input[name="altNames"]').value=(app.altNames||[]).join(',');form.querySelector('input[name="upstream"]').value=app.upstream?`${app.upstream.protocol}://${app.upstream.host}:${app.upstream.port}`:'';form.querySelector('input[name="preserveHost"]').checked=!!app.preserveHost;saveBtn.textContent='Update App';cancelEdit.style.display='inline-flex';statusLine.textContent='Editing '+host;}
+function resetEdit(){editingHost=null;hostInput.readOnly=false;form.reset();saveBtn.textContent='Save App';cancelEdit.style.display='none';}
+cancelEdit.addEventListener('click',()=>resetEdit());
+
+refresh();
+
+const ws=new WebSocket((location.protocol==='https:'?'wss':'ws')+'://'+location.host+'/admin/ws?token='+encodeURIComponent(token));
+ws.onmessage=e=>{try{
+  const msg=JSON.parse(e.data);
+  
+  // Enhanced log handling with real-time formatting
+  if(msg.type==='app-log'&&selHost&&msg.host===selHost){
+    const logLine = document.createElement('div');
+    logLine.className = 'log-line fade-in';
+    
+    // Detect log levels for real-time logs
+    const line = msg.line.toLowerCase();
+    if (line.includes('error') || line.includes('err:')) {
+      logLine.classList.add('error');
+    } else if (line.includes('warn') || line.includes('warning')) {
+      logLine.classList.add('warn');
+    }
+    
+    const timestamp = new Date(msg.ts).toLocaleTimeString();
+    logLine.innerHTML = `<span class="log-timestamp">[${timestamp}]</span> <span class="log-stream">${msg.stream}</span> <span class="log-content">${msg.line}</span>`;
+    logBox.appendChild(logLine);
+    
+    if(followBtn.dataset.follow==='1') logBox.scrollTop=logBox.scrollHeight;
+  }
+  
+	const card=appsWrap.querySelector(`.app-card[data-host="${msg.host}"]`);
+	switch(msg.type){
+		case 'app-health': if(card){const dot=card.querySelector('[data-role="dot"]');const code=card.querySelector('[data-role="code"]');dot.className='health-dot anim '+(msg.healthy?'ok':(msg.healthy===false?'bad':''));dot.title=(msg.healthy?'healthy':'unhealthy')+' '+(msg.statusCode||'');code.textContent=msg.statusCode?`⚕ ${msg.statusCode}`:'';} break;
+		case 'app-start': if(card){card.classList.add('running');card.dataset.startedAt=Date.now();const badge=card.querySelector('[data-run]');if(badge){badge.textContent='RUN';badge.className='badge run';badge.dataset.run='1';}const toggleBtn=card.querySelector('[data-act="runToggle"]');if(toggleBtn){toggleBtn.textContent='Stop';toggleBtn.setAttribute('data-run-toggle','1');}} break;
+		case 'app-exit': if(card){card.classList.remove('running');const badge=card.querySelector('[data-run]');if(badge){badge.textContent='STOP';badge.className='badge stop';badge.dataset.run='0';}const up=card.querySelector('[data-role="uptime"]');if(up)up.textContent='⏱️ 0s';const toggleBtn=card.querySelector('[data-act="runToggle"]');if(toggleBtn){toggleBtn.textContent='Start';toggleBtn.setAttribute('data-run-toggle','0');}} break;
+		case 'app-added': case 'app-updated': refresh(); break; // structural
+		case 'app-removed': if(card) card.remove(); break;
+	}
+	statusLine.textContent=msg.type; 
+}catch{}};
+
+ws.onopen=()=>{wsState.textContent='WS open';wsState.classList.add('ok');wsState.classList.remove('bad');};
+ws.onclose=()=>{wsState.textContent='WS closed';wsState.classList.add('bad');wsState.classList.remove('ok');};
+filterBox.addEventListener('input',()=>render(lastApps));
+refreshBtn.addEventListener('click',()=>refresh());
+logSelect.addEventListener('change',e=>loadLogs(e.target.value));
+document.getElementById('clearLogs').addEventListener('click',()=>{logBox.innerHTML='';});
+followBtn.addEventListener('click',()=>{const v=followBtn.dataset.follow==='1'?'0':'1';followBtn.dataset.follow=v;followBtn.textContent='Auto‑scroll: '+(v==='1'?'On':'Off');});
+
+// Update uptime display every second
+setInterval(()=>{const now=Date.now();appsWrap.querySelectorAll('.app-card.running').forEach(c=>{const started=parseInt(c.dataset.startedAt||'0',10);if(!started)return;const upEl=c.querySelector('[data-role="uptime"]');if(upEl){const ms=now-started;upEl.textContent='⏱️ '+fmtMs(ms);}});},1000);
+</script>
+</body></html>

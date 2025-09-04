@@ -1,14 +1,13 @@
 {
   "email": "krishnapawk@gmail.com",
   "agreeToTerms": true,
-
   "acme": {
     "mode": "http-01",
     "directoryUrl": "https://acme-v02.api.letsencrypt.org/directory",
     "packageRoot": ".",
     "configDir": "./storage"
   },
-
+  "adminToken": "changeme-dev-token",
   "apps": [
     {
       "host": "local.console",
@@ -16,78 +15,28 @@
       "preserveHost": false,
       "cwd": "c:/KP/Git/nodejs/mynodeapp/apps/app1",
       "start": "npm start",
+      "autoInstall": true,
       "healthUrl": "http://127.0.0.1:3000/health",
-      "port": 3000
+      "port": 3000,
+      "disabled": false
     },
     {
       "host": "app.local.console",
       "altNames": ["app.local.console"],
-      "preserveHost": false,
-      "cwd": "c:/KP/Git/nodejs/mynodeapp/apps/app2",
-      "start": "npm start",
-      "healthUrl": "http://127.0.0.1:3001/health",
-      "port": 3001
-    },
-    {
-      "host": "api.local.console",
-      "altNames": ["api.local.console", "api.alias.local"],
-      "preserveHost": false,
-      "cwd": "c:/KP/Git/nodejs/mynodeapp/apps/app3",
-      "start": "npm start",
-      "healthUrl": "http://127.0.0.1:3002/health",
-      "port": 3002
-    },
-    {
-      "host": "app.abc.com",
-      "altNames": ["app.abc.com", "app.abc.local"],
-      "preserveHost": false,
-      "cwd": "c:/KP/Git/nodejs/mynodeapp/apps/app4",
-      "start": "npm start",
-      "healthUrl": "http://127.0.0.1:3006/health",
-      "port": 3006
-    },
-    {
-      "host": "app.pca.ca",
-      "altNames": ["app.pca.ca"],
       "preserveHost": true,
       "upstream": {
         "protocol": "http",
         "host": "127.0.0.1",
-        "port": 3006,
+        "port": 3000,
         "rejectUnauthorized": false
       },
-      "healthUrl": "http://127.0.0.1:3006/health"
+      "healthUrl": "http://127.0.0.1:3000/health"
     },
-    {
-      "host": "app.login.pca.ca",
-      "altNames": ["app.login.pca.ca"],
-      "preserveHost": true,
-      "upstream": {
-        "protocol": "https",
-        "host": "app.abc.com",
-        "port": 4443,
-        "rejectUnauthorized": false
-      },
-      "healthUrl": "https://app.abc.com:4443/health"
-    }, 
-    {
-      "# dev-proxy": "Proxy a React/Vite dev server running on localhost:50001",
-      "host": "local.myreactapp.com",
-      "altNames": ["local.myreactapp.com"],
-      "upstream": {
-        "protocol": "http",
-        "host": "127.0.0.1",
-        "port": 50001
-      },
-      "# preserveHost": "optional boolean (when true gateway forwards original Host header to upstream)",
-      "healthUrl": "http://127.0.0.1:5001/health"
-    },
-
     {
       "# static-site": "Serve a built React app (spa) from disk. Useful for production or a built prototype",
-      "host": "local.myreactapp.com",
-      "altNames": ["local.myreactapp.com"],
-      "staticDir": "C:/path/to/myreactapp/build"
+      "host": "local.stacktrades",
+      "altNames": ["local.stacktrades"],
+      "staticDir": "C:/KP/GitLab/react/stacktrades/build-local"
     }
   ]
 }

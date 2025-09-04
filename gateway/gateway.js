@@ -3,7 +3,7 @@ import path from "node:path";
 import http from "node:http";
 import https from "node:https";
 import tls from "node:tls";
-import { spawn } from "node:child_process";
+import { spawn } from "node:child_process"; // legacy (may remove if no direct spawns remain)
 import { fileURLToPath } from "node:url";
 import crypto from "node:crypto";
 import httpProxy from "http-proxy";
@@ -14,39 +14,56 @@ import selfsigned from "selfsigned";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const cfg = JSON.parse(fs.readFileSync(path.join(__dirname, "gateway.config.json"), "utf8"));
 
-/* ----------------------- Simple process supervisor ----------------------- */
-const children = new Map(); // host -> child
-function startApp(app) {
-  if (children.has(app.host)) return;
-  const child = spawn(app.start.split(" ")[0], app.start.split(" ").slice(1), {
-    cwd: app.cwd,
-    env: { ...process.env, NODE_ENV: process.env.NODE_ENV || "production" },
-    stdio: "inherit",
-    shell: true
-  });
-  children.set(app.host, child);
-  child.on("exit", (code) => {
-    console.error(`[${app.host}] exited with code ${code}. Restarting in 2s...`);
-    children.delete(app.host);
-    setTimeout(() => startApp(app), 2000);
-  });
+/* ------------------- App Manager / Admin Control Plane ------------------ */
+import { createAppManagerFromFile } from './app-manager.mjs';
+import { installAdminApi } from './admin-api.mjs';
+import { installAdminWs } from './admin-ws.mjs';
+
+const adminToken = process.env.GATEWAY_ADMIN_TOKEN || cfg.adminToken || '';
+const manager = createAppManagerFromFile(path.join(__dirname, 'gateway.config.json'));
+// Start all apps with start commands
+for (const app of manager.listApps()) {
+  if (app.start) {
+    try { manager.start(app.host); } catch (e) { console.error('Start failed for', app.host, e); }
+  }
 }
-for (const app of cfg.apps) {
-  // Only start apps that provide a start command (backend processes). Proxy/static-only entries won't be spawned.
-  if (app.start) startApp(app);
+
+// Diagnostic event logging
+manager.on('app-start', e => console.log(`[app-start] ${e.host} pid=${e.pid}`));
+manager.on('app-exit', e => console.log(`[app-exit] ${e.host} code=${e.code} signal=${e.signal}`));
+manager.on('app-log', e => { if (e.stream === 'stderr') console.error(`[app-log][${e.host}][stderr] ${e.line.trim()}`); else console.log(`[app-log][${e.host}] ${e.line.trim()}`); });
+manager.on('app-health', e => console.log(`[app-health] ${e.host} healthy=${e.healthy} status=${e.statusCode || 0}`));
+
+// Host map must be defined before rebuildHostMap is first invoked
+const hostMap = new Map(); // will be populated by rebuildHostMap()
+
+// Rebuild hostMap whenever config changes
+function rebuildHostMap() {
+  hostMap.clear();
+  for (const app of manager.listApps()) hostMap.set(app.host.toLowerCase(), app);
 }
+manager.on('app-added', rebuildHostMap);
+manager.on('app-removed', rebuildHostMap);
+manager.on('app-updated', rebuildHostMap);
+rebuildHostMap();
 
 /* ----------------------- Health wait (optional) -------------------------- */
 async function waitHealthy(app, timeoutMs = 15000) {
   const start = Date.now();
+  let firstAttempt = true;
   while (Date.now() - start < timeoutMs) {
     try {
       if (!app.healthUrl) return true;
       const res = await request(app.healthUrl, { method: "GET" });
       if (res.statusCode >= 200 && res.statusCode < 500) return true;
     } catch {}
+    if (firstAttempt) {
+      firstAttempt = false;
+      console.log(`[health] waiting for ${app.host} -> ${app.healthUrl}`);
+    }
     await new Promise(r => setTimeout(r, 500));
   }
+  console.warn(`[health] timeout after ${timeoutMs}ms for ${app.host} (${app.healthUrl})`);
   return false;
 }
 
@@ -253,12 +270,42 @@ proxy.on('proxyRes', (proxyRes, req, res) => {
   }
 });
 
-const hostMap = new Map(cfg.apps.map(a => [a.host.toLowerCase(), a]));
+
+// Allow overriding listen ports via env
+const HTTP_PORT = parseInt(process.env.GATEWAY_HTTP_PORT || '8080', 10);
+const HTTPS_PORT = parseInt(process.env.GATEWAY_HTTPS_PORT || '4443', 10);
+
+// Certificate cache with TTL (24 hours)
+const secureContextCache = new Map(); // hostname -> { context, expires }
+const CERT_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
+const MAX_CERT_CACHE_SIZE = 100; // Limit cache size
+
+// Periodic cache cleanup (every hour)
+setInterval(() => {
+  const now = Date.now();
+  for (const [hostname, cached] of secureContextCache.entries()) {
+    if (now >= cached.expires) {
+      secureContextCache.delete(hostname);
+    }
+  }
+  // If still too large, remove oldest entries
+  if (secureContextCache.size > MAX_CERT_CACHE_SIZE) {
+    const entries = Array.from(secureContextCache.entries());
+    entries.sort((a, b) => a[1].expires - b[1].expires);
+    const toRemove = entries.slice(0, entries.length - MAX_CERT_CACHE_SIZE);
+    toRemove.forEach(([hostname]) => secureContextCache.delete(hostname));
+  }
+}, 60 * 60 * 1000); // Every hour
 
 // HTTP server:
 //  - serves ACME HTTP-01 challenges at /.well-known/acme-challenge/{token}
-//  - redirects everything else to HTTPS
+//  - redirects everything else to HTTPS (ensuring redirect uses HTTPS_PORT, not incoming :8080)
+let adminHandler; // assigned after install
 const httpSrv = http.createServer(async (req, res) => {
+  if (adminHandler && req.url && req.url.startsWith('/admin')) {
+  const done = adminHandler(req, res);
+  if (done) return; // admin handled fully
+  }
   // ACME challenge
   if (req.url && req.url.startsWith("/.well-known/acme-challenge/")) {
     const token = req.url.split("/").pop();
@@ -268,24 +315,41 @@ const httpSrv = http.createServer(async (req, res) => {
     res.end(val);
     return;
   }
-  // otherwise redirect to https
-  const host = req.headers.host || "";
-  const location = `https://${host}${req.url || "/"}`;
+  // otherwise redirect to https (normalize host: replace HTTP_PORT with HTTPS_PORT)
+  const hostHeader = req.headers.host || "";
+  let hostname = hostHeader;
+  let port = '';
+  if (hostHeader.includes(':')) {
+    const parts = hostHeader.split(':');
+    hostname = parts[0];
+    port = parts[1];
+  }
+  // If request came on the HTTP port (or its string form), swap to HTTPS_PORT
+  let targetPort = (HTTPS_PORT === 443) ? '' : `:${HTTPS_PORT}`;
+  const location = `https://${hostname}${targetPort}${req.url || '/'}`;
   res.writeHead(301, { Location: location });
   res.end();
 });
 
 // HTTPS server with dynamic SNI certs per hostname
 const defaultCreds = selfSigned("localhost");
-const secureContextCache = new Map(); // hostname -> SecureContext
 
 async function getSecureContext(servername) {
   servername = (servername || "").toLowerCase();
   if (!hostMap.has(servername)) return tls.createSecureContext(defaultCreds);
-  if (secureContextCache.has(servername)) return secureContextCache.get(servername);
+  
+  // Check cache with TTL
+  const cached = secureContextCache.get(servername);
+  if (cached && Date.now() < cached.expires) {
+    return cached.context;
+  }
+  
   const { key, cert } = await ensureCert(servername);
   const ctx = tls.createSecureContext({ key, cert });
-  secureContextCache.set(servername, ctx);
+  secureContextCache.set(servername, { 
+    context: ctx, 
+    expires: Date.now() + CERT_CACHE_TTL 
+  });
   return ctx;
 }
 
@@ -305,7 +369,26 @@ const httpsSrv = https.createServer({
   if (!app) { res.writeHead(502); res.end("Unknown host"); return; }
 
   // Ensure app is healthy before proxying
-  await waitHealthy(app);
+  // First, ensure process (if start command defined) is actually running
+  try {
+    if (app.start) {
+      const rt = manager.runtime(app.host);
+      if (!rt.running) {
+        res.writeHead(503, { 'Content-Type': 'text/plain' });
+        res.end('App process not running (host: ' + app.host + ')');
+        return;
+      }
+    }
+  } catch (e) {
+    // If runtime lookup fails, continue to proxy logic (best effort)
+  }
+  const healthy = await waitHealthy(app);
+  if (!healthy && app.healthUrl) {
+    // Provide a more descriptive upstream failure response instead of a generic Bad Gateway later
+    res.writeHead(502, { 'Content-Type': 'text/plain' });
+    res.end('Upstream health check failed for host: ' + app.host + ' url: ' + app.healthUrl);
+    return;
+  }
   // If this app is configured to serve static files, do that instead of proxying
   if (app.staticDir) {
     try {
@@ -386,18 +469,22 @@ httpsSrv.on("upgrade", (req, socket, head) => {
 
 /* ------------------------------ Start servers ---------------------------- */
 function startServers() {
-  httpSrv.listen(8080, () => console.log("HTTP  server listening on :80 (for ACME + redirect)"));
-  httpsSrv.listen(4443, () => console.log("HTTPS server listening on :4443"));
+  httpSrv.listen(HTTP_PORT, () => console.log(`HTTP  server listening on :${HTTP_PORT} (ACME + redirect + admin API)`));
+  httpsSrv.listen(HTTPS_PORT, () => console.log(`HTTPS server listening on :${HTTPS_PORT}`));
+  // Install admin API/WS AFTER servers are created so they can hook events
+  const api = installAdminApi(httpSrv, { manager, token: adminToken });
+  adminHandler = api.handle;
+  installAdminWs(httpsSrv, { manager, token: adminToken });
 }
 
 // Handle port conflicts
 httpSrv.on('error', (err) => {
   if (err.code === 'EADDRINUSE') {
-    console.log('Port 8080 is already in use. Attempting to close previous instance...');
+  console.log(`Port ${HTTP_PORT} is already in use. Attempting to close previous instance...`);
     // Try to close any existing server on this port
     setTimeout(() => {
       httpSrv.close(() => {
-        console.log('Closed previous HTTP server, retrying...');
+    console.log('Closed previous HTTP server, retrying...');
         setTimeout(startServers, 1000);
       });
     }, 1000);
@@ -408,7 +495,7 @@ httpSrv.on('error', (err) => {
 
 httpsSrv.on('error', (err) => {
   if (err.code === 'EADDRINUSE') {
-    console.log('Port 4443 is already in use. Attempting to close previous instance...');
+  console.log(`Port ${HTTPS_PORT} is already in use. Attempting to close previous instance...`);
     setTimeout(() => {
       httpsSrv.close(() => {
         console.log('Closed previous HTTPS server, retrying...');
@@ -428,9 +515,8 @@ process.on('SIGINT', () => {
   httpSrv.close(() => console.log('HTTP server closed'));
   httpsSrv.close(() => console.log('HTTPS server closed'));
   // Kill child processes
-  for (const [host, child] of children) {
-    console.log(`Killing process for ${host}`);
-    child.kill();
+  for (const app of manager.listApps()) {
+    try { manager.stop(app.host); } catch {}
   }
   process.exit(0);
 });
@@ -439,9 +525,8 @@ process.on('SIGTERM', () => {
   console.log('Shutting down servers...');
   httpSrv.close(() => console.log('HTTP server closed'));
   httpsSrv.close(() => console.log('HTTPS server closed'));
-  for (const [host, child] of children) {
-    console.log(`Killing process for ${host}`);
-    child.kill();
+  for (const app of manager.listApps()) {
+    try { manager.stop(app.host); } catch {}
   }
   process.exit(0);
 });
