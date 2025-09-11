@@ -3,7 +3,7 @@ import path from 'node:path';
 import { URL, fileURLToPath } from 'node:url';
 
 // Minimal router without external deps
-export function installAdminApi(server, { manager, token }) {
+export function installAdminApi(server, { manager, token, certInstaller }) {
   const routes = [];
   const add = (method, pattern, handler) => routes.push({ method, pattern, handler });
 
@@ -110,6 +110,38 @@ export function installAdminApi(server, { manager, token }) {
     } catch (e) { 
       console.error('Logs API error:', e);
       json(res, 400, { error: e.message }); 
+    }
+  });
+
+  // Trigger certificate installation/generation for a single host (sync to ensureCert in gateway)
+  add('POST', /^\/admin\/apps\/([^/]+)\/install-cert$/i, async (req, res, m) => {
+    try {
+      const host = decodeURIComponent(m[1]);
+      if (typeof certInstaller !== 'function') return json(res, 400, { error: 'cert installer not available' });
+      // call the installer which returns {key, cert} or throws
+      const result = await certInstaller(host);
+      // If on Windows, try to import into CurrentUser Root using certutil.exe
+      const isWin = process.platform === 'win32';
+      if (isWin && result && result.certPath) {
+        try {
+          const { spawn } = await import('node:child_process');
+          await new Promise((resolve, reject) => {
+            const args = ['-user', '-addstore', 'Root', result.certPath];
+            const p = spawn('certutil.exe', args, { stdio: 'inherit' });
+            p.on('exit', (code) => code === 0 ? resolve() : reject(new Error('certutil exit code '+code)));
+            p.on('error', (err) => reject(err));
+          });
+          json(res, 200, { installed: true, host, importedToStore: true });
+        } catch (e) {
+          console.error('certutil import failed', e);
+          json(res, 200, { installed: true, host, importedToStore: false, importError: e.message });
+        }
+      } else {
+        json(res, 200, { installed: true, host, ok: !!result });
+      }
+    } catch (e) {
+      console.error('install-cert error:', e);
+      json(res, 400, { error: e.message });
     }
   });
 

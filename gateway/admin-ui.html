@@ -73,9 +73,8 @@ button.small{padding:4px 8px;font-size:11px}
 .filter-bar input{background:var(--panel-alt);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:8px;font-size:13px;min-width:220px;outline:none;font-family:var(--mono);transition:all var(--transition-duration) ease}
 .filter-bar input:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(59,130,246,.25)}
 
-/* Enhanced Logs Section */
-#logsSec{min-height:400px;}
-#logBox{white-space:pre-wrap;font-family:var(--mono);background:var(--panel-alt);border:1px solid var(--border);flex:1;border-radius:10px;overflow:auto;font-size:12px;line-height:1.35;padding:14px;min-height:300px;transition:all var(--transition-duration) ease;position:relative}
+#logsSec{min-height:400px;display:flex;flex-direction:column}
+#logBox{white-space:pre-wrap;font-family:var(--mono);background:var(--panel-alt);border:1px solid var(--border);flex:1;border-radius:10px;overflow:auto;font-size:12px;line-height:1.35;padding:14px;max-height:60vh;transition:all var(--transition-duration) ease;position:relative}
 #logBox:empty::before{content:'📋 Select an app to view logs...';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:var(--muted);font-size:14px;text-align:center;opacity:0.7}
 .log-header{display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap}
 .log-header select{background:var(--panel-alt);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:6px 10px;font-size:12px;transition:all var(--transition-duration) ease}
@@ -171,17 +170,69 @@ function render(apps){
 		div.className='app-card fade-in'+(rt.running?' running':'');
 		if(rt.running && rt.uptimeMs) div.dataset.startedAt=Date.now()-rt.uptimeMs;
 		div.dataset.host=a.host;
-		div.innerHTML=`<div class="app-head"><div class="health-dot anim ${dotClass}" data-role="dot" title="${h.healthy===undefined?'no data':(ok?'healthy':'unhealthy')} ${h.statusCode||''}"></div><div class="app-host">${a.host}</div><a class="link-btn" href="${appUrl}" target="_blank" rel="noopener" title="Open ${a.host}">↗</a>${runBadge}${a.disabled?'<span class="badge dis">DISABLED</span>':''}${a.preserveHost?'<span class="badge ph">PH</span>':''}${alt}</div><div class="meta"><span>🚪 ${a.port||''}</span><span class="uptime" data-role="uptime">⏱️ ${uptime}</span><span class="health-code" data-role="code">${h.statusCode?`⚕ ${h.statusCode}`:''}</span></div><div class="actions"><button class="secondary small" data-act="logs">Logs</button><button class="small" data-act="runToggle" data-run-toggle="${rt.running?1:0}">${runToggleLabel}</button><button class="small secondary" data-act="restart">Restart</button><button class="small secondary" data-act="toggle">${a.disabled?'Enable':'Disable'}</button><button class="small" data-act="edit">Edit</button><button class="small danger" data-act="del">Del</button></div>`;
-		div.addEventListener('click',e=>{const act=e.target.getAttribute('data-act');if(!act)return;switch(act){case 'logs':loadLogs(a.host);break;case 'runToggle':{const running=e.target.getAttribute('data-run-toggle')==='1';doAct(a.host,running?'stop':'start');break;}case 'restart':doAct(a.host,'restart');break;case 'toggle':toggleEnable(a.host,a.disabled?1:0);break;case 'edit':editApp(a.host);break;case 'del':delApp(a.host);break;}});
+  div.innerHTML=`<div class="app-head"><div class="health-dot anim ${dotClass}" data-role="dot" title="${h.healthy===undefined?'no data':(ok?'healthy':'unhealthy')} ${h.statusCode||''}"></div><div class="app-host">${a.host}</div><a class="link-btn" href="${appUrl}" target="_blank" rel="noopener" title="Open ${a.host}">↗</a>${runBadge}${a.disabled?'<span class="badge dis">DISABLED</span>':''}${a.preserveHost?'<span class="badge ph">PH</span>':''}${alt}</div><div class="meta"><span>🚪 ${a.port||''}</span><span class="uptime" data-role="uptime">⏱️ ${uptime}</span><span class="health-code" data-role="code">${h.statusCode?`⚕ ${h.statusCode}`:''}</span></div><div class="actions"><button class="secondary small" data-act="logs">Logs</button><button class="small" data-act="runToggle" data-run-toggle="${rt.running?1:0}">${runToggleLabel}</button><button class="small secondary" data-act="restart">Restart</button><button class="small secondary" data-act="toggle">${a.disabled?'Enable':'Disable'}</button><button class="small" data-act="edit">Edit</button><button class="small danger" data-act="del">Del</button><button class="small" data-act="installCert">Install Cert</button></div>`;
+    div.addEventListener('click',e=>{
+      // If the click was on a control/button/link with a data-act attribute, handle normally
+      const act = e.target.getAttribute('data-act');
+        if (act) {
+        switch(act){
+          case 'logs': loadLogs(a.host); break;
+          case 'runToggle': { const running = e.target.getAttribute('data-run-toggle') === '1'; doAct(a.host, running ? 'stop' : 'start'); break; }
+          case 'restart': doAct(a.host, 'restart'); break;
+          case 'toggle': toggleEnable(a.host, a.disabled ? 1 : 0); break;
+          case 'edit': editApp(a.host); break;
+          case 'del': delApp(a.host); break;
+          case 'installCert': installCert(a.host); break;
+        }
+        return;
+      }
+
+      // If click was on a link (open app), ignore to allow navigation
+      if (e.target.closest('a')) return;
+
+      // Otherwise treat click on card as select & load logs
+      loadLogs(a.host);
+    });
 		appsWrap.appendChild(div);
 	}
-	const cur=logSelect.value;logSelect.innerHTML='<option value="">Select app…</option>'+lastApps.map(a=>`<option ${cur===a.host?'selected':''}>${a.host}</option>`).join('');
+    // Preserve current selection: prefer explicit `selHost` if set, otherwise keep select's value
+    const cur = selHost || logSelect.value || '';
+    logSelect.innerHTML = '<option value="">Select app…</option>' + lastApps.map(a => `
+      <option value="${a.host}" ${cur===a.host ? 'selected' : ''}>${a.host}</option>`).join('');
+
+    // Ensure the select reflects the current selection
+    if (cur) logSelect.value = cur;
+
+    // Auto-load logs for the first app if nothing is selected yet
+    if (!selHost && lastApps.length) {
+      selHost = lastApps[0].host;
+      logSelect.value = selHost;
+      // Load logs for the default app (don't block render)
+      setTimeout(() => loadLogs(selHost), 80);
+    }
 }
 
 async function refresh(){try{const d=await api('/admin/apps');render(d.apps);}catch(e){statusLine.textContent='ERR '+e.message;}}
 async function doAct(h,a){try{await api(`/admin/apps/${h}/${a}`,'POST');statusLine.textContent=`${a} sent`;setTimeout(refresh,400);}catch(e){alert(e);}}
 async function toggleEnable(h,disabled){try{await api(`/admin/apps/${h}/${disabled?'enable':'disable'}`,'POST');statusLine.textContent='toggle sent';setTimeout(refresh,400);}catch(e){alert(e);}}
 async function delApp(h){if(!confirm('Delete '+h+'?'))return;try{await api(`/admin/apps/${h}`,'DELETE');refresh();}catch(e){alert(e);}}
+
+// Install certificate for a single app (per-card action)
+async function installCert(h){
+  if(!h) return;
+  try{
+    statusLine.textContent = `Installing certificate for ${h}...`;
+    const res = await api(`/admin/apps/${encodeURIComponent(h)}/install-cert`,'POST');
+    if(res && res.installed){
+      statusLine.textContent = `Certificate installed for ${h}`;
+    } else {
+      statusLine.textContent = `Install returned: ${JSON.stringify(res)}`;
+    }
+  }catch(e){
+    statusLine.textContent = `Cert install failed for ${h}: ${e.message}`;
+    alert('Install cert failed: '+e.message);
+  }
+}
 
 // Enhanced log loading with better formatting
 async function loadLogs(h){
@@ -201,24 +252,30 @@ async function loadLogs(h){
       return;
     }
     
-    d.logs.forEach(log => {
+    // Show newest logs on top — reverse the array then append so newest is first
+    const logs = (d.logs || []).slice().reverse();
+    for (const log of logs) {
       const logLine = document.createElement('div');
       logLine.className = 'log-line';
-      
+
       // Detect log levels
-      const line = log.line.toLowerCase();
+      const line = (log.line || '').toLowerCase();
       if (line.includes('error') || line.includes('err:')) {
         logLine.classList.add('error');
       } else if (line.includes('warn') || line.includes('warning')) {
         logLine.classList.add('warn');
       }
-      
+
       const timestamp = new Date(log.ts).toLocaleTimeString();
       logLine.innerHTML = `<span class="log-timestamp">[${timestamp}]</span> <span class="log-stream">${log.stream}</span> <span class="log-content">${log.line}</span>`;
+      // append so the reversed array places newest entries at the top
       logBox.appendChild(logLine);
-    });
-    
-    if(followBtn.dataset.follow==='1') logBox.scrollTop=logBox.scrollHeight;
+    }
+
+    // Ensure viewport shows the newest logs at the top when follow is on
+    if (followBtn.dataset.follow === '1') {
+      logBox.scrollTop = 0;
+    }
     statusLine.textContent = `Loaded ${d.logs.length} log entries for ${h}`;
   } catch(e) {
     console.error('Log loading error:', e);
@@ -247,20 +304,22 @@ ws.onmessage=e=>{try{
   if(msg.type==='app-log'&&selHost&&msg.host===selHost){
     const logLine = document.createElement('div');
     logLine.className = 'log-line fade-in';
-    
+
     // Detect log levels for real-time logs
-    const line = msg.line.toLowerCase();
+    const line = (msg.line || '').toLowerCase();
     if (line.includes('error') || line.includes('err:')) {
       logLine.classList.add('error');
     } else if (line.includes('warn') || line.includes('warning')) {
       logLine.classList.add('warn');
     }
-    
+
     const timestamp = new Date(msg.ts).toLocaleTimeString();
     logLine.innerHTML = `<span class="log-timestamp">[${timestamp}]</span> <span class="log-stream">${msg.stream}</span> <span class="log-content">${msg.line}</span>`;
-    logBox.appendChild(logLine);
-    
-    if(followBtn.dataset.follow==='1') logBox.scrollTop=logBox.scrollHeight;
+    // Insert new log at the top so newest logs are first
+    logBox.insertBefore(logLine, logBox.firstChild);
+
+    // Keep view at top when following newest logs
+    if(followBtn.dataset.follow==='1') logBox.scrollTop = 0;
   }
   
 	const card=appsWrap.querySelector(`.app-card[data-host="${msg.host}"]`);

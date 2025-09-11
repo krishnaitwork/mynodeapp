@@ -90,7 +90,7 @@ async function ensureCert(hostname) {
         cert: fs.readFileSync(certPath)
       }).context.getCertificate();
       // If valid for >10 days, reuse
-      return { key: fs.readFileSync(keyPath), cert: fs.readFileSync(certPath) };
+      return { key: fs.readFileSync(keyPath), cert: fs.readFileSync(certPath), certPath, keyPath };
     } catch { /* fallthrough to renew */ }
   }
 
@@ -99,7 +99,9 @@ async function ensureCert(hostname) {
     console.log(`Using self-signed certificate for local domain: ${hostname}`);
     const app = hostMap.get(hostname);
     const alt = (app && Array.isArray(app.altNames) && app.altNames.length) ? app.altNames : [hostname];
-    return selfSigned(hostname, alt);
+  const r = selfSigned(hostname, alt);
+  // selfSigned writes files and returns {key,cert}
+  return { ...r, certPath, keyPath };
   }
 
   // HTTP-01 challenge handler uses `challenges` Map via the HTTP server
@@ -131,14 +133,15 @@ async function ensureCert(hostname) {
       challengePriority: ["http-01"]
     });
 
-    fs.writeFileSync(certPath, cert);
-    fs.writeFileSync(keyPath, key);
-    console.log(`Certificate saved: ${certPath}`);
-    console.log(`Private key saved: ${keyPath}`);
-    return { key, cert };
+  fs.writeFileSync(certPath, cert);
+  fs.writeFileSync(keyPath, key);
+  console.log(`Certificate saved: ${certPath}`);
+  console.log(`Private key saved: ${keyPath}`);
+  return { key, cert, certPath, keyPath };
   } catch (error) {
     console.error(`ACME failed for ${hostname}, falling back to self-signed:`, error.message);
-    return selfSigned(hostname);
+  const r = selfSigned(hostname);
+  return { ...r, certPath, keyPath };
   }
 }
 
@@ -472,7 +475,7 @@ function startServers() {
   httpSrv.listen(HTTP_PORT, () => console.log(`HTTP  server listening on :${HTTP_PORT} (ACME + redirect + admin API)`));
   httpsSrv.listen(HTTPS_PORT, () => console.log(`HTTPS server listening on :${HTTPS_PORT}`));
   // Install admin API/WS AFTER servers are created so they can hook events
-  const api = installAdminApi(httpSrv, { manager, token: adminToken });
+  const api = installAdminApi(httpSrv, { manager, token: adminToken, certInstaller: ensureCert });
   adminHandler = api.handle;
   installAdminWs(httpsSrv, { manager, token: adminToken });
 }

@@ -11,7 +11,9 @@
   "apps": [
     {
       "host": "local.console",
-      "altNames": ["local.console"],
+      "altNames": [
+        "local.console"
+      ],
       "preserveHost": false,
       "cwd": "c:/KP/Git/nodejs/mynodeapp/apps/app1",
       "start": "npm start",
@@ -22,7 +24,9 @@
     },
     {
       "host": "app.local.console",
-      "altNames": ["app.local.console"],
+      "altNames": [
+        "app.local.console"
+      ],
       "preserveHost": true,
       "upstream": {
         "protocol": "http",
@@ -35,7 +39,9 @@
     {
       "# static-site": "Serve a built React app (spa) from disk. Useful for production or a built prototype",
       "host": "local.stacktrades",
-      "altNames": ["local.stacktrades"],
+      "altNames": [
+        "local.stacktrades"
+      ],
       "staticDir": "C:/KP/GitLab/react/stacktrades/build-local"
     }
   ]
