@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { URL, fileURLToPath } from 'node:url';
+import crypto from 'node:crypto';
 
 // Minimal router without external deps
 export function installAdminApi(server, { manager, token, certInstaller }) {
@@ -142,6 +143,35 @@ export function installAdminApi(server, { manager, token, certInstaller }) {
     } catch (e) {
       console.error('install-cert error:', e);
       json(res, 400, { error: e.message });
+    }
+  });
+
+  // Inspect uploaded certificate (.crt/.pem) and return subject/SANs for verification
+  add('POST', /^\/admin\/inspect-cert$/i, async (req, res) => {
+    try {
+      const chunks = [];
+      for await (const chunk of req) chunks.push(chunk);
+      const buf = Buffer.concat(chunks);
+      const txt = buf.toString('utf8');
+      const pemMatch = txt.match(/-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/);
+      if (!pemMatch) return json(res, 400, { error: 'No PEM certificate found in upload' });
+      const pem = pemMatch[0];
+      try {
+        const cert = new crypto.X509Certificate(pem);
+        // subject is a string like 'CN=...'
+        const subject = cert.subject || '';
+        // subjectAltName may be a string like 'DNS:example.com, DNS:foo'
+        const sanRaw = cert.subjectAltName || '';
+        const sans = [];
+        const dnsRe = /DNS:([^,\s]+)/g;
+        let m;
+        while ((m = dnsRe.exec(sanRaw)) !== null) sans.push(m[1]);
+        return json(res, 200, { subject, sanRaw, sans });
+      } catch (e) {
+        return json(res, 400, { error: 'Failed to parse certificate: ' + e.message });
+      }
+    } catch (e) {
+      return json(res, 500, { error: e.message });
     }
   });
 

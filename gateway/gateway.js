@@ -95,13 +95,59 @@ async function ensureCert(hostname) {
   }
 
   // For local domains, use self-signed certificates
-  if (hostname.includes('.local') || (hostname.includes('local.') || hostname.includes('localhost') || hostname.includes('.console'))) {
-    console.log(`Using self-signed certificate for local domain: ${hostname}`);
-    const app = hostMap.get(hostname);
-    const alt = (app && Array.isArray(app.altNames) && app.altNames.length) ? app.altNames : [hostname];
-  const r = selfSigned(hostname, alt);
-  // selfSigned writes files and returns {key,cert}
-  return { ...r, certPath, keyPath };
+  if (hostname.includes('.local') || hostname.includes('local.') || hostname.includes('localhost') || hostname.includes('.console')) {
+    console.log(`Using combined self-signed certificate for local domains (requested: ${hostname})`);
+    // Use a single canonical cert for all local domains so we don't generate multiple files
+    const combinedName = 'local-gateway';
+    const combinedCertPath = path.join(storeDir, `${combinedName}.crt`);
+    const combinedKeyPath = path.join(storeDir, `${combinedName}.key`);
+
+    // If combined cert exists and valid, reuse it
+    if (fs.existsSync(combinedCertPath) && fs.existsSync(combinedKeyPath)) {
+      try {
+        const certObj = tls.createSecureContext({ key: fs.readFileSync(combinedKeyPath), cert: fs.readFileSync(combinedCertPath) }).context.getCertificate();
+        return { key: fs.readFileSync(combinedKeyPath), cert: fs.readFileSync(combinedCertPath), certPath: combinedCertPath, keyPath: combinedKeyPath };
+      } catch (e) {
+        // fallthrough and regenerate
+      }
+    }
+
+    // Build SAN list from configured apps (include host and altNames) but only local-like domains
+    const apps = manager.listApps();
+    const localNames = new Set();
+    // always include requested hostname
+    localNames.add(hostname.toLowerCase());
+    for (const a of apps) {
+      if (!a || !a.host) continue;
+      const h = String(a.host).toLowerCase();
+      if (h.includes('.local') || h.includes('local.') || h.includes('localhost') || h.includes('.console')) localNames.add(h);
+      if (Array.isArray(a.altNames)) {
+        for (const alt of a.altNames) {
+          const altS = String(alt).toLowerCase();
+          if (altS.includes('.local') || altS.includes('local.') || altS.includes('localhost') || altS.includes('.console')) localNames.add(altS);
+        }
+      }
+    }
+
+    const names = Array.from(localNames.values());
+    if (names.length === 0) names.push(hostname.toLowerCase());
+
+    // Generate a self-signed cert that includes all local names as SANs
+    const attrs = [
+      { name: 'commonName', value: hostname },
+      { name: 'organizationName', value: 'Console' },
+      { name: 'organizationalUnitName', value: 'KP' }
+    ];
+    const extensions = [{ name: 'subjectAltName', altNames: names.map(n => ({ type: 2, value: n })) }];
+    const pems = selfsigned.generate(attrs, { days: 365, extensions });
+    const cert = pems.cert;
+    const key = pems.private;
+
+    fs.writeFileSync(combinedCertPath, cert);
+    fs.writeFileSync(combinedKeyPath, key);
+    console.log(`Combined local certificate saved: ${combinedCertPath}`);
+    console.log(`Combined local key saved: ${combinedKeyPath}`);
+    return { key, cert, certPath: combinedCertPath, keyPath: combinedKeyPath };
   }
 
   // HTTP-01 challenge handler uses `challenges` Map via the HTTP server

@@ -30,10 +30,34 @@ console.log('Configured domains:', Array.from(configDomains).join(', '));
 
 // Only process certificate files for domains that are actually in the config
 const allCrtFiles = fs.readdirSync(storeDir).filter(f => f.toLowerCase().endsWith('.crt'));
-const crtFiles = allCrtFiles.filter(f => {
-  const domain = f.replace(/\.crt$/i, '').toLowerCase();
-  return configDomains.has(domain);
-});
+
+// Helper: consider domains like .local, local., localhost, .console as local environment
+function isLocalDomain(d) {
+  if (!d) return false;
+  const s = d.toLowerCase();
+  return s.includes('.local') || s.includes('local.') || s.includes('localhost') || s.includes('.console');
+}
+
+// If all configured domains are local-like, prefer a single combined cert (local-combined.crt)
+const allLocal = Array.from(configDomains).length > 0 && Array.from(configDomains).every(isLocalDomain);
+let crtFiles = [];
+if (allLocal) {
+  const combinedName = 'local-gateway.crt';
+  if (allCrtFiles.includes(combinedName)) {
+    crtFiles = [combinedName];
+  } else {
+    // Fallback: if combined cert not present, try to match any configured domains as before
+    crtFiles = allCrtFiles.filter(f => {
+      const domain = f.replace(/\.crt$/i, '').toLowerCase();
+      return configDomains.has(domain);
+    });
+  }
+} else {
+  crtFiles = allCrtFiles.filter(f => {
+    const domain = f.replace(/\.crt$/i, '').toLowerCase();
+    return configDomains.has(domain);
+  });
+}
 
 if (crtFiles.length === 0) {
   console.log('No .crt files found for configured domains in', storeDir);

@@ -106,7 +106,7 @@ form#create button{grid-column:1/-1;margin-top:4px}
 		</div>
 		<div class="apps-wrap" id="appsWrap"><div class="empty">Loading…</div></div>
 	</section>
-	<section id="logsSec"><h2>Logs</h2><div class="log-header"><select id="logSelect"><option value="">Select app…</option></select><button class="secondary small" id="clearLogs">Clear</button><button class="secondary small" id="followBtn" data-follow="1">Auto‑scroll: On</button></div><div id="logBox"></div></section>
+  <section id="logsSec"><h2>Logs</h2><div class="log-header"><select id="logSelect"><option value="">Select app…</option></select><button class="secondary small" id="clearLogs">Clear</button><button class="secondary small" id="followBtn" data-follow="1">Auto‑scroll: On</button><button class="secondary small" id="inspectCertBtn">Inspect Cert</button></div><div id="logBox"></div></section>
 	<section id="addSec"><h2>Add / Update App</h2>
 			<form id="create">
 			<label>Host<input name="host" required placeholder="api.local.console" /></label>
@@ -124,6 +124,19 @@ form#create button{grid-column:1/-1;margin-top:4px}
 		</form>
 	</section>
 </main>
+
+<!-- Cert inspect modal -->
+<div id="certModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);align-items:center;justify-content:center;z-index:60">
+  <div style="background:var(--panel);border:1px solid var(--border);padding:18px;border-radius:12px;min-width:320px;max-width:720px;color:var(--text)">
+    <h3 style="margin:0 0 8px">Inspect Certificate</h3>
+    <div style="display:flex;gap:10px;align-items:center;margin-bottom:8px">
+      <input type="file" id="certFileInput" accept=".crt,.pem" />
+      <button id="certUploadBtn" class="primary">Upload & Inspect</button>
+      <button id="certCloseBtn" class="secondary">Close</button>
+    </div>
+    <div id="certInspectResult" style="max-height:40vh;overflow:auto;background:var(--panel-alt);padding:10px;border:1px solid var(--border);border-radius:8px;color:var(--muted)">No file selected</div>
+  </div>
+</div>
 <script>
 // Theme Management
 const themeToggle = document.getElementById('themeToggle');
@@ -340,6 +353,31 @@ refreshBtn.addEventListener('click',()=>refresh());
 logSelect.addEventListener('change',e=>loadLogs(e.target.value));
 document.getElementById('clearLogs').addEventListener('click',()=>{logBox.innerHTML='';});
 followBtn.addEventListener('click',()=>{const v=followBtn.dataset.follow==='1'?'0':'1';followBtn.dataset.follow=v;followBtn.textContent='Auto‑scroll: '+(v==='1'?'On':'Off');});
+
+// Cert inspect modal logic
+const inspectCertBtn = document.getElementById('inspectCertBtn');
+const certModal = document.getElementById('certModal');
+const certFileInput = document.getElementById('certFileInput');
+const certUploadBtn = document.getElementById('certUploadBtn');
+const certCloseBtn = document.getElementById('certCloseBtn');
+const certInspectResult = document.getElementById('certInspectResult');
+
+inspectCertBtn.addEventListener('click', ()=>{ certModal.style.display='flex'; certInspectResult.textContent='No file selected'; certFileInput.value=''; });
+certCloseBtn.addEventListener('click', ()=>{ certModal.style.display='none'; });
+
+certUploadBtn.addEventListener('click', async ()=>{
+  const f = certFileInput.files && certFileInput.files[0];
+  if(!f){ alert('Choose a .crt/.pem file first'); return; }
+  certInspectResult.textContent = 'Uploading and parsing…';
+  try{
+    const form = await f.arrayBuffer();
+    const res = await fetch('/admin/inspect-cert', { method: 'POST', headers: { 'X-Admin-Token': token }, body: new Uint8Array(form) });
+    const j = await res.json();
+    if(!res.ok) { certInspectResult.textContent = `Error: ${j.error||res.statusText}`; return; }
+    const { subject, sanRaw, sans } = j;
+    certInspectResult.innerHTML = `<div style="font-weight:600;margin-bottom:6px">Subject</div><div style="color:var(--text);margin-bottom:8px">${subject||'(none)'}</div><div style="font-weight:600;margin-bottom:6px">SANs</div><div style="color:var(--text)">${(sans && sans.length)?('<ul>'+sans.map(s=>`<li>${s}</li>`).join('')+'</ul>'):'(no SANs found)'}<div style="margin-top:8px;color:var(--muted);font-size:12px">Raw: ${sanRaw||'(none)'}</div></div>`;
+  }catch(e){ certInspectResult.textContent = 'Upload failed: '+e.message; }
+});
 
 // Update uptime display every second
 setInterval(()=>{const now=Date.now();appsWrap.querySelectorAll('.app-card.running').forEach(c=>{const started=parseInt(c.dataset.startedAt||'0',10);if(!started)return;const upEl=c.querySelector('[data-role="uptime"]');if(upEl){const ms=now-started;upEl.textContent='⏱️ '+fmtMs(ms);}});},1000);
