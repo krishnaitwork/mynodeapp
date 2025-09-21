@@ -27,6 +27,10 @@ export function installAdminApi(server, { manager, token, certInstaller }) {
     res.end(JSON.stringify(obj));
   }
 
+  // Resolve __dirname and storage directory once for consistent file operations
+  const __dirname = path.dirname(fileURLToPath(import.meta.url));
+  const storageDir = path.join(__dirname, 'storage');
+
   add('GET', /^\/admin\/apps$/, (req, res) => {
   const apps = manager.listApps().map(a => ({ ...a, runtime: manager.runtime(a.host) }));
   json(res, 200, { apps });
@@ -790,8 +794,7 @@ export function installAdminApi(server, { manager, token, certInstaller }) {
   // Return combined local certificate SANs (if present) so UI can check coverage
   add('GET', /^\/admin\/cert\/sans$/i, async (req, res) => {
     try {
-      const storeDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../storage');
-  const combinedCertPath = path.join(storeDir, 'local-gateway.crt');
+      const combinedCertPath = path.join(storageDir, 'local-gateway.crt');
       if (!fs.existsSync(combinedCertPath)) return json(res, 200, { sans: [] });
       const pem = fs.readFileSync(combinedCertPath, 'utf8');
       const { X509Certificate } = crypto;
@@ -807,8 +810,79 @@ export function installAdminApi(server, { manager, token, certInstaller }) {
     }
   });
 
+  // List certificate files in storage (for UI management)
+  add('GET', /^\/admin\/certs$/i, async (req, res) => {
+    try {
+      const storeDir = storageDir;
+      if (!fs.existsSync(storeDir)) return json(res, 200, { certs: [] });
+      const files = fs.readdirSync(storeDir, { withFileTypes: true });
+      const certFiles = files.filter(f => f.isFile() && /\.(crt|pem|cer)$/i.test(f.name)).map(f => f.name);
+      const certs = [];
+      for (const name of certFiles) {
+        try {
+          const p = path.join(storeDir, name);
+          const txt = fs.readFileSync(p, 'utf8');
+          let subject = '';
+          const sans = [];
+          try {
+            const cert = new crypto.X509Certificate(txt);
+            subject = cert.subject || '';
+            const sanRaw = cert.subjectAltName || '';
+            const dnsRe = /DNS:([^,\s]+)/g;
+            let m;
+            while ((m = dnsRe.exec(sanRaw)) !== null) sans.push(m[1]);
+          } catch (e) {
+            // ignore parse errors
+          }
+          certs.push({ name, subject, sans });
+        } catch (e) {
+          // ignore file read errors
+        }
+      }
+      return json(res, 200, { certs });
+    } catch (e) {
+      return json(res, 500, { error: e.message });
+    }
+  });
+
+  // Delete selected certificate files from storage. Expects JSON body { names: ["file.crt"] }
+  add('POST', /^\/admin\/certs\/delete$/i, (req, res) => {
+    let body = '';
+    req.on('data', d => body += d);
+    req.on('end', () => {
+      try {
+        const data = JSON.parse(body || '{}');
+        const names = Array.isArray(data.names) ? data.names : [];
+        const storeDir = storageDir;
+        const deleted = [];
+        const errors = [];
+        for (const name of names) {
+          try {
+            if (typeof name !== 'string' || name.includes('..') || name.includes('/') || name.includes('\\')) {
+              errors.push({ name, error: 'invalid name' });
+              continue;
+            }
+            const p = path.join(storeDir, name);
+            if (fs.existsSync(p)) {
+              fs.unlinkSync(p);
+              deleted.push(name);
+            }
+            // attempt to delete matching .key with same basename
+            try {
+              const base = name.replace(/\.(crt|pem|cer)$/i, '');
+              const keyPath = path.join(storeDir, base + '.key');
+              if (fs.existsSync(keyPath)) { fs.unlinkSync(keyPath); deleted.push(path.basename(keyPath)); }
+            } catch (ee) { /* ignore */ }
+          } catch (e) {
+            errors.push({ name, error: e.message });
+          }
+        }
+        return json(res, 200, { deleted, errors });
+      } catch (e) { return json(res, 400, { error: e.message }); }
+    });
+  });
+
   // Serve static admin UI (single file) at /admin (HTML) and /admin/app.js
-  const __dirname = path.dirname(fileURLToPath(import.meta.url));
   const uiPath = path.join(__dirname, 'admin-ui.html');
   let uiHtmlCache = null;
 

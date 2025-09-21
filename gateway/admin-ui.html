@@ -96,7 +96,7 @@ form#create button{grid-column:1/-1;margin-top:4px}
 @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 @media (max-width:980px){main{grid-template-columns:1fr;padding:18px}}
 </style></head>
-<body><header><h1>Gateway Admin</h1><div class="theme-switcher"><div class="theme-toggle" id="themeToggle"><div class="theme-slider"></div></div></div><div class="pill ws" id="wsState">WS…</div><div id="statusLine"></div></header>
+<body><header><h1>Gateway Admin</h1><button id="certManagerBtn" title="Manage storage certificates" style="margin-left:14px;padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:var(--panel);color:var(--text);cursor:pointer">Certs</button><div class="theme-switcher"><div class="theme-toggle" id="themeToggle"><div class="theme-slider"></div></div></div><div class="pill ws" id="wsState">WS…</div><div id="statusLine"></div></header>
 <main>
 	<section id="appsSec">
 		<h2>Applications <span class="small" id="appsCount"></span></h2>
@@ -149,13 +149,29 @@ form#create button{grid-column:1/-1;margin-top:4px}
   </div>
 </div>
 <!-- Generic confirmation modal (responsive) -->
-<div id="genericConfirmModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);align-items:center;justify-content:center;z-index:62">
+<div id="genericConfirmModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);align-items:center;justify-content:center;z-index:80">
   <div style="background:var(--panel);border:1px solid var(--border);padding:14px;border-radius:12px;min-width:260px;max-width:560px;color:var(--text);box-shadow:var(--shadow)">
     <div id="genericConfirmMessage" style="font-weight:600;margin-bottom:10px;color:var(--text)"></div>
     <div style="display:flex;gap:8px;justify-content:flex-end">
       <button id="genericConfirmCancel" class="secondary">Cancel</button>
       <button id="genericConfirmOk" class="primary">OK</button>
     </div>
+  </div>
+</div>
+</div>
+<!-- Certificate manager modal -->
+<div id="certManagerModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);align-items:center;justify-content:center;z-index:63">
+  <div style="background:var(--panel);border:1px solid var(--border);padding:18px;border-radius:12px;min-width:320px;max-width:900px;color:var(--text);max-height:80vh;overflow:auto">
+    <h3 style="margin:0 0 8px">Storage Certificates</h3>
+    <div style="margin-bottom:8px;display:flex;gap:8px;align-items:center;justify-content:space-between">
+      <div style="color:var(--muted);font-size:13px">List of certificate files in storage</div>
+      <div>
+        <button id="certRefreshBtn" class="secondary small">Refresh</button>
+        <button id="certDeleteBtn" class="danger small">Delete Selected</button>
+        <button id="certManagerCloseBtn" class="secondary small">Close</button>
+      </div>
+    </div>
+    <div id="certList" style="background:var(--panel-alt);border:1px solid var(--border);padding:10px;border-radius:8px;color:var(--muted)">Loading…</div>
   </div>
 </div>
 <script>
@@ -455,6 +471,46 @@ certUploadBtn.addEventListener('click', async ()=>{
     const { subject, sanRaw, sans } = j;
     certInspectResult.innerHTML = `<div style="font-weight:600;margin-bottom:6px">Subject</div><div style="color:var(--text);margin-bottom:8px">${subject||'(none)'}</div><div style="font-weight:600;margin-bottom:6px">SANs</div><div style="color:var(--text)">${(sans && sans.length)?('<ul>'+sans.map(s=>`<li>${s}</li>`).join('')+'</ul>'):'(no SANs found)'}<div style="margin-top:8px;color:var(--muted);font-size:12px">Raw: ${sanRaw||'(none)'}</div></div>`;
   }catch(e){ certInspectResult.textContent = 'Upload failed: '+e.message; }
+});
+
+// Certificate manager modal wiring
+const certManagerBtn = document.getElementById('certManagerBtn');
+const certManagerModal = document.getElementById('certManagerModal');
+const certList = document.getElementById('certList');
+const certRefreshBtn = document.getElementById('certRefreshBtn');
+const certDeleteBtn = document.getElementById('certDeleteBtn');
+const certManagerCloseBtn = document.getElementById('certManagerCloseBtn');
+
+certManagerBtn.addEventListener('click', ()=>{ certManagerModal.style.display='flex'; loadCerts(); });
+certManagerCloseBtn.addEventListener('click', ()=>{ certManagerModal.style.display='none'; });
+certRefreshBtn.addEventListener('click', ()=>loadCerts());
+
+async function loadCerts(){
+  certList.innerHTML = '<div style="padding:18px;color:var(--muted)">Loading…</div>';
+  try{
+    const j = await api('/admin/certs');
+    const list = Array.isArray(j.certs) ? j.certs : [];
+    if(!list.length){ certList.innerHTML = '<div class="empty">No cert files found in storage</div>'; return; }
+    certList.innerHTML = '<div style="display:flex;flex-direction:column;gap:8px">'+list.map(f=>{
+      const sanInfo = (f.sans && f.sans.length)?`<div style="color:var(--muted);font-size:12px">SANs: ${f.sans.join(', ')}</div>`:'';
+      return `<label style="display:flex;gap:8px;align-items:flex-start;padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--panel);"><input type=checkbox data-file="${f.name}" style="margin-top:6px"/><div style="flex:1"><div style="font-weight:600">${f.name}</div><div style="color:var(--muted);font-size:12px">Subject: ${f.subject||'(none)'}</div>${sanInfo}</div></label>`;
+    }).join('')+'</div>';
+  }catch(e){ certList.innerHTML = `<div style="padding:18px;color:var(--danger)">Failed to load: ${e.message}</div>`; }
+}
+
+certDeleteBtn.addEventListener('click', async ()=>{
+  const checks = Array.from(certList.querySelectorAll('input[type=checkbox]:checked'));
+  if(!checks.length){ alert('Select at least one file to delete'); return; }
+  const files = checks.map(c=>c.getAttribute('data-file'));
+  const ok = await showConfirm('Delete '+files.join(', ')+' ?');
+  if(!ok) return;
+  try{
+    // server expects { names: [...] }
+    const res = await api('/admin/certs/delete','POST',{ names: files });
+    if(res && res.deleted){ statusLine.textContent = 'Deleted: '+res.deleted.join(', '); loadCerts(); }
+    else if(res && res.errors && res.errors.length){ statusLine.textContent = 'Delete errors: '+JSON.stringify(res.errors); loadCerts(); }
+    else statusLine.textContent = 'Delete result: '+JSON.stringify(res);
+  }catch(e){ alert('Delete failed: '+e.message); }
 });
 
 // Update uptime display every second
