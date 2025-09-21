@@ -83,7 +83,9 @@ async function ensureCert(hostname) {
   const keyPath  = path.join(storeDir, `${hostname}.key`);
 
   // Use existing if present & not expiring soon
-  if (fs.existsSync(certPath) && fs.existsSync(keyPath)) {
+  // NOTE: for local-like hostnames we prefer the combined certificate (local-gateway)
+  // so skip per-host reuse for local domains to avoid installing per-host CNs.
+  if (!isLocalDomainName(hostname) && fs.existsSync(certPath) && fs.existsSync(keyPath)) {
     try {
       const cert = tls.createSecureContext({
         key: fs.readFileSync(keyPath),
@@ -102,13 +104,61 @@ async function ensureCert(hostname) {
     const combinedCertPath = path.join(storeDir, `${combinedName}.crt`);
     const combinedKeyPath = path.join(storeDir, `${combinedName}.key`);
 
-    // If combined cert exists and valid, reuse it
+    // If combined cert exists and valid, reuse it — but ensure it actually contains the requested hostname in its SANs
     if (fs.existsSync(combinedCertPath) && fs.existsSync(combinedKeyPath)) {
       try {
-        const certObj = tls.createSecureContext({ key: fs.readFileSync(combinedKeyPath), cert: fs.readFileSync(combinedCertPath) }).context.getCertificate();
-        return { key: fs.readFileSync(combinedKeyPath), cert: fs.readFileSync(combinedCertPath), certPath: combinedCertPath, keyPath: combinedKeyPath };
+        const pem = fs.readFileSync(combinedCertPath, 'utf8');
+        // Use X509Certificate to inspect SANs when available
+        try {
+          const { X509Certificate } = crypto;
+          const x = new X509Certificate(pem);
+          const sanRaw = x.subjectAltName || '';
+          // diagnostic: log existing combined cert CN and SANs
+          try {
+            const sub = x.subject || '';
+            // extract CN robustly up to comma/newline/slash
+            const mm = String(sub).match(/CN=([^,\n\r\\/]+)/i);
+            if (mm && mm[1]) console.log(`[cert] existing combined cert CN=${mm[1]} SANs=${sanRaw}`);
+          } catch(e){}
+            // Also ensure the Subject CN of the existing combined cert matches our expected combinedName
+            const subjectRaw = x.subject || '';
+            let certCN = null;
+            try {
+              const mcn = String(subjectRaw).match(/CN=([^,\n\r\\/]+)/i);
+              if (mcn && mcn[1]) certCN = mcn[1];
+            } catch (e) { /* ignore */ }
+          const sans = [];
+          const dnsRe = /DNS:([^,\s]+)/g;
+          let m;
+          while ((m = dnsRe.exec(sanRaw)) !== null) sans.push(m[1].toLowerCase());
+          // match exact or wildcard SANs (e.g. *.local.console)
+          const hostLower = hostname.toLowerCase();
+          const sanMatchesHost = (list, host) => {
+            for (const s of list) {
+              if (!s) continue;
+              const ss = s.toLowerCase();
+              if (ss === host) return true;
+              if (ss.startsWith('*.')) {
+                const base = ss.slice(2);
+                if (host === base) continue; // wildcard doesn't match the base itself
+                if (host.endsWith('.' + base) || host === base) return true;
+              }
+            }
+            return false;
+          };
+          if (sanMatchesHost(sans, hostLower) && certCN && certCN.toLowerCase() === combinedName.toLowerCase()) {
+            return { key: fs.readFileSync(combinedKeyPath), cert: fs.readFileSync(combinedCertPath), certPath: combinedCertPath, keyPath: combinedKeyPath };
+          }
+          // If certificate CN doesn't match expected combinedName, fallthrough to regenerate
+          if (sanMatchesHost(sans, hostLower) && certCN && certCN.toLowerCase() !== combinedName.toLowerCase()) {
+            console.log(`[cert] existing combined cert CN (${certCN}) does not match expected (${combinedName}), regenerating`);
+          }
+          // If hostname not present, fallthrough to regenerate combined cert
+        } catch (e) {
+          // Unable to parse cert SANs — fallthrough and attempt regenerate
+        }
       } catch (e) {
-        // fallthrough and regenerate
+        // Read error — fallthrough and regenerate
       }
     }
 
@@ -129,12 +179,25 @@ async function ensureCert(hostname) {
       }
     }
 
-    const names = Array.from(localNames.values());
+    let names = Array.from(localNames.values()).map(s => s.toLowerCase());
     if (names.length === 0) names.push(hostname.toLowerCase());
 
-    // Generate a self-signed cert that includes all local names as SANs
+    // Add wildcard SANs for each base domain (e.g. local.console -> *.local.console) so subdomains are covered
+    const wildcardSet = new Set();
+    for (const n of names) {
+      const parts = n.split('.');
+      if (parts.length >= 2 && !n.includes('localhost')) {
+        const base = parts.slice(-2).join('.');
+        if (base && base !== 'localhost') wildcardSet.add(`*.${base}`);
+      }
+    }
+    // Merge wildcard names but avoid duplicates
+    for (const w of wildcardSet) if (!names.includes(w)) names.push(w);
+
+    // Generate a self-signed cert that includes all local names (and wildcard variants) as SANs
+    // Use a stable Common Name that matches the combined cert filename so Windows store replace logic can find it
     const attrs = [
-      { name: 'commonName', value: hostname },
+      { name: 'commonName', value: combinedName },
       { name: 'organizationName', value: 'Console' },
       { name: 'organizationalUnitName', value: 'KP' }
     ];
@@ -143,11 +206,16 @@ async function ensureCert(hostname) {
     const cert = pems.cert;
     const key = pems.private;
 
-    fs.writeFileSync(combinedCertPath, cert);
-    fs.writeFileSync(combinedKeyPath, key);
-    console.log(`Combined local certificate saved: ${combinedCertPath}`);
-    console.log(`Combined local key saved: ${combinedKeyPath}`);
-    return { key, cert, certPath: combinedCertPath, keyPath: combinedKeyPath };
+  // Atomic write: write to .tmp then rename
+  const tmpCert = combinedCertPath + '.tmp';
+  const tmpKey = combinedKeyPath + '.tmp';
+  fs.writeFileSync(tmpCert, cert);
+  fs.writeFileSync(tmpKey, key);
+  fs.renameSync(tmpCert, combinedCertPath);
+  fs.renameSync(tmpKey, combinedKeyPath);
+  console.log(`Combined local certificate saved: ${combinedCertPath}`);
+  console.log(`Combined local key saved: ${combinedKeyPath}`);
+  return { key, cert, certPath: combinedCertPath, keyPath: combinedKeyPath };
   }
 
   // HTTP-01 challenge handler uses `challenges` Map via the HTTP server
@@ -190,6 +258,35 @@ async function ensureCert(hostname) {
   return { ...r, certPath, keyPath };
   }
 }
+
+// Helper to detect local-like domains
+function isLocalDomainName(d) {
+  if (!d) return false;
+  const s = String(d).toLowerCase();
+  return s.includes('.local') || s.includes('local.') || s.includes('localhost') || s.includes('.console');
+}
+
+// When apps are added or started, proactively ensure the combined local cert is regenerated
+manager.on('app-added', async (e) => {
+  try {
+    const host = e && e.host ? e.host : (e && e.host && e.host.host) ? e.host.host : null;
+    if (isLocalDomainName(host)) {
+      // ensureCert will rebuild combined cert if the requested hostname isn't yet in SANs
+      await ensureCert(host);
+      console.log('[cert] ensured combined cert after app-added for', host);
+    }
+  } catch (err) { console.error('cert ensure on app-added failed', err); }
+});
+
+manager.on('app-start', async (e) => {
+  try {
+    const host = e && e.host ? e.host : null;
+    if (isLocalDomainName(host)) {
+      await ensureCert(host);
+      console.log('[cert] ensured combined cert after app-start for', host);
+    }
+  } catch (err) { console.error('cert ensure on app-start failed', err); }
+});
 
 /* ------------- Fallback self-signed (first boot before ACME) ------------- */
 function selfSigned(hostname = "localhost") {

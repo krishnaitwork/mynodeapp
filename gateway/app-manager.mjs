@@ -39,9 +39,9 @@ export class AppManager extends EventEmitter {
     this.apps.set(key, { ...app });
     this._persist();
     this.emit('app-added', { host: key, app });
-    if (app.start) this.start(host);
-  this._scheduleHealth(key);
-    return this.getApp(host);
+    if (app.start) this.start(key);
+    this._scheduleHealth(key);
+    return this.getApp(key);
   }
 
   updateApp(host, partial) {

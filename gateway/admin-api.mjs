@@ -119,23 +119,577 @@ export function installAdminApi(server, { manager, token, certInstaller }) {
     try {
       const host = decodeURIComponent(m[1]);
       if (typeof certInstaller !== 'function') return json(res, 400, { error: 'cert installer not available' });
-      // call the installer which returns {key, cert} or throws
+      // If this is a local-like host, ensure any existing combined cert on disk has the expected CN
+      const storeDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../storage');
+      const combinedCertPath = path.join(storeDir, 'local-gateway.crt');
+      const combinedKeyPath = path.join(storeDir, 'local-gateway.key');
+      // Helper to extract CN robustly from subject strings that may use
+      // commas or newlines as separators. Stops at comma, newline, carriage
+      // return, or slash.
+      const extractCN = (subject) => {
+        if (!subject) return null;
+        const mm = String(subject).match(/CN=([^,\n\r\\/]+)/i);
+        return mm && mm[1] ? mm[1].trim() : null;
+      };
+
+      try {
+        if (fs.existsSync(combinedCertPath)) {
+          try {
+            const pem = fs.readFileSync(combinedCertPath, 'utf8');
+            const cert = new crypto.X509Certificate(pem);
+            const subj = cert.subject || '';
+            const mcn = extractCN(subj);
+            if (mcn && mcn.toLowerCase() !== 'local-gateway') {
+              // Remove mismatched combined cert files so ensureCert will regenerate with correct CN
+              try { fs.unlinkSync(combinedCertPath); } catch(_){}
+              try { fs.unlinkSync(combinedKeyPath); } catch(_){}
+              console.log('[cert] removed mismatched combined cert to force regeneration (found CN=' + (mcn[1]||'') + ')');
+            }
+          } catch (e) { /* ignore parse errors and regenerate anyway */ }
+        }
+      } catch (e) { /* ignore fs errors */ }
+
+      // call the installer which returns {key, cert, certPath} or throws
       const result = await certInstaller(host);
+
+      // parse the produced certificate (if present) to get subject and SANs
+      let producedCertCN = null;
+      const producedSans = [];
+      let producedSubject = '';
+      try {
+        if (result && result.certPath && fs.existsSync(result.certPath)) {
+          const pemTxt = fs.readFileSync(result.certPath, 'utf8');
+          try {
+            const newCert = new crypto.X509Certificate(pemTxt);
+            producedSubject = newCert.subject || '';
+            const mcn = extractCN(producedSubject);
+            if (mcn) producedCertCN = String(mcn).trim().toLowerCase();
+            const sanRaw = newCert.subjectAltName || '';
+            const dnsRe = /DNS:([^,\s]+)/g;
+            let mm;
+            while ((mm = dnsRe.exec(sanRaw)) !== null) producedSans.push(mm[1].toLowerCase());
+          } catch (e) {
+            // ignore parse errors and treat as unknown CN (no deletion)
+          }
+        }
+      } catch (e) { /* ignore fs errors */ }
+
       // If on Windows, try to import into CurrentUser Root using certutil.exe
       const isWin = process.platform === 'win32';
       if (isWin && result && result.certPath) {
         try {
           const { spawn } = await import('node:child_process');
+          // First, list store to find matching thumbprints for subjects that match host or SANs and delete them
+          // Use certutil -user -store Root to list and then remove matching entries
+          const list = spawn('certutil.exe', ['-user', '-store', 'Root'], { stdio: ['ignore', 'pipe', 'pipe'] });
+          let out = '';
+          for await (const chunk of list.stdout) out += chunk.toString('utf8');
+          for await (const chunk of list.stderr) out += chunk.toString('utf8');
+
+          console.log('[cert] certutil list output length:', out.length, 'first 500 chars:', out.substring(0, 500));
+
+          // Search for entries where Subject contains CN=<host> or SANs contain host
+          const reThumb = /Cert Hash\(sha1\):\s*([0-9A-Fa-f]+)/g;
+          const entries = [];
+          const lines = out.split(/\r?\n/);
+          let current = null;
+          for (const line of lines) {
+            const mthumb = line.match(/Cert Hash\(sha1\):\s*([0-9A-Fa-f]+)/);
+            if (mthumb) {
+              if (current) entries.push(current);
+              current = { thumbprint: mthumb[1], subject: '', san: '' };
+              continue;
+            }
+            // Capture Subject line
+            const sm = line.match(/^\s*Subject:\s*(.*)$/);
+            if (sm && current) {
+              current.subject = sm[1].trim();
+              continue;
+            }
+            // Capture SAN-related lines. certutil output varies by system and locale; look
+            // for common markers like 'DNS Name=' or 'DNS:' or 'Subject Alternative Name:'
+            if (current && /DNS\s*Name=|DNS:|Subject Alternative Name:/i.test(line)) {
+              current.san += (line.trim() + ' ');
+            }
+          }
+          if (current) entries.push(current);
+
+          // Parse DNS names from each entry's accumulated SAN text to make matching easier
+          const parseDnsFromSanText = (text) => {
+            if (!text) return [];
+            const out = new Set();
+            const dnsRe1 = /DNS[:=]\s*([^,;\s]+)/ig; // matches 'DNS:example' or 'DNS=example'
+            const dnsRe2 = /DNS\s*Name=([^,;\s]+)/ig; // matches 'DNS Name=example'
+            let mm;
+            while ((mm = dnsRe1.exec(text)) !== null) out.add(mm[1].toLowerCase());
+            while ((mm = dnsRe2.exec(text)) !== null) out.add(mm[1].toLowerCase());
+            return Array.from(out);
+          };
+
+          for (const e of entries) {
+            e.sans = parseDnsFromSanText(e.san || '');
+          }
+
+          // If any entry doesn't include parsed SANs, query the store for that
+          // specific certificate to get full details (some certutil outputs omit SANs
+          // in the summary listing). This avoids missing wildcard SANs.
+          const fillEntrySans = async (thumb) => {
+            try {
+              const p = spawn('certutil.exe', ['-user', '-store', 'Root', thumb], { stdio: ['ignore', 'pipe', 'pipe'] });
+              let out = '';
+              for await (const c of p.stdout) out += c.toString('utf8');
+              for await (const c of p.stderr) out += c.toString('utf8');
+              // Look for DNS: or DNS Name= occurrences
+              const dns = [];
+              const dnsRe1 = /DNS[:=]\s*([^,;\s]+)/ig;
+              const dnsRe2 = /DNS\s*Name=([^,;\s]+)/ig;
+              let mm;
+              while ((mm = dnsRe1.exec(out)) !== null) dns.push(mm[1].toLowerCase());
+              while ((mm = dnsRe2.exec(out)) !== null) dns.push(mm[1].toLowerCase());
+              return Array.from(new Set(dns));
+            } catch (e) {
+              return [];
+            }
+          };
+
+          // If certutil summary omitted Subject or SANs, fetch full details for the thumb
+          const fillEntryDetails = async (thumb) => {
+            try {
+              const p = spawn('certutil.exe', ['-user', '-store', 'Root', thumb], { stdio: ['ignore', 'pipe', 'pipe'] });
+              let out = '';
+              for await (const c of p.stdout) out += c.toString('utf8');
+              for await (const c of p.stderr) out += c.toString('utf8');
+              // Extract Subject line
+              const sm = out.match(/Subject:\s*(.*)/i);
+              const subject = sm ? (sm[1] || '').trim() : '';
+              // Extract SANs as before
+              const dns = [];
+              const dnsRe1 = /DNS[:=]\s*([^,;\s]+)/ig;
+              const dnsRe2 = /DNS\s*Name=([^,;\s]+)/ig;
+              let mm;
+              while ((mm = dnsRe1.exec(out)) !== null) dns.push(mm[1].toLowerCase());
+              while ((mm = dnsRe2.exec(out)) !== null) dns.push(mm[1].toLowerCase());
+              return { subject, sans: Array.from(new Set(dns)) };
+            } catch (e) {
+              return { subject: '', sans: [] };
+            }
+          };
+
+          for (const e of entries) {
+            if (e.thumbprint) {
+              // If subject is missing or CN couldn't be extracted, or SANs are empty, fetch full details
+              const needSubject = !e.subject || !extractCN(e.subject);
+              const needSans = (!e.sans || e.sans.length === 0);
+              if (needSubject || needSans) {
+                try {
+                  const details = await fillEntryDetails(e.thumbprint);
+                  if (details) {
+                    if (details.subject) e.subject = details.subject;
+                    if (Array.isArray(details.sans) && details.sans.length) e.sans = details.sans;
+                  }
+                } catch (ee) { /* ignore per-thumb failures */ }
+              }
+            }
+          }
+
+          console.log('[cert] store entries:', entries.map(e => ({ thumb: e.thumbprint, subj: e.subject, sans: e.sans })));
+
+          // Decide whether we should attempt to delete existing combined certs.
+          // Only do so when either the produced cert CN is 'local-gateway' (installer
+          // produced the combined cert) OR the caller explicitly confirmed deletion
+          // via the query param `confirm=1` and the produced cert would otherwise
+          // conflict with the combined cert coverage.
+          const urlObj = new URL(req.url, 'http://localhost');
+          const confirm = urlObj.searchParams.get('confirm') === '1';
+          // lightweight, wildcard-aware pattern matcher (used below)
+          const matchesPatternSimple = (pattern, hostnameToCheck) => {
+            if (!pattern || !hostnameToCheck) return false;
+            const p = String(pattern).toLowerCase();
+            const h = String(hostnameToCheck).toLowerCase();
+            if (p === h) return true;
+            if (p.startsWith('*.')) {
+              const base = p.slice(2);
+              if (h === base) return true;
+              if (h.endsWith('.' + base)) return true;
+            }
+            return false;
+          };
+
+          // Detect whether the produced certificate is a combined/wildcard certificate.
+          const producedIsCombined = (producedCertCN === 'local-gateway') || producedSans.some(s => typeof s === 'string' && String(s).startsWith('*.'));
+          // If the produced combined cert explicitly contains the installing host in its SANs
+          // (or is CN=local-gateway), treat this as a replacement: delete existing combined cert and import the new one.
+          let shouldDeleteCombined = producedIsCombined || producedSans.some(s => matchesPatternSimple(s, host)) || confirm;
+          console.log('[cert] host:', host, 'producedCertCN:', producedCertCN, 'produedIsCombined:', producedIsCombined, 'shouldDeleteCombined:', shouldDeleteCombined, 'confirm:', confirm);
+
+          // Build a conservative target set: prefer SANs from existing combined cert (if present),
+          // otherwise compute what SANs the new combined cert would include based on configured apps + host.
+          const targetNames = new Set();
+          const combinedCertPath = path.join(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../storage'), 'local-gateway.crt');
+          try {
+            var combinedSansFromDisk = [];
+            if (fs.existsSync(combinedCertPath)) {
+              const pem = fs.readFileSync(combinedCertPath, 'utf8');
+              try {
+                const cert = new crypto.X509Certificate(pem);
+                const sanRaw = cert.subjectAltName || '';
+                const dnsRe = /DNS:([^,\s]+)/g;
+                let mm;
+                while ((mm = dnsRe.exec(sanRaw)) !== null) {
+                  const v = mm[1].toLowerCase();
+                  targetNames.add(v);
+                  combinedSansFromDisk.push(v);
+                }
+              } catch (e) {
+                // parsing failed - fall back to computed names
+              }
+            }
+          } catch (e) { /* ignore */ }
+
+          // If we couldn't derive SANs from disk, compute expected local names similar to ensureCert
+          if (targetNames.size === 0) {
+            try {
+              const localNames = new Set();
+              localNames.add(host.toLowerCase());
+              for (const a of manager.listApps()) {
+                if (!a || !a.host) continue;
+                const h = String(a.host).toLowerCase();
+                if (h.includes('.local') || h.includes('local.') || h.includes('localhost') || h.includes('.console')) localNames.add(h);
+                if (Array.isArray(a.altNames)) for (const alt of a.altNames) {
+                  const altS = String(alt).toLowerCase();
+                  if (altS.includes('.local') || altS.includes('local.') || altS.includes('localhost') || altS.includes('.console')) localNames.add(altS);
+                }
+              }
+              const namesArr = Array.from(localNames);
+              // add wildcard SANs for base domains
+              const wildcardSet = new Set();
+              for (const n of namesArr) {
+                const parts = n.split('.');
+                if (parts.length >= 2 && !n.includes('localhost')) {
+                  const base = parts.slice(-2).join('.');
+                  if (base && base !== 'localhost') wildcardSet.add(`*.${base}`);
+                }
+              }
+              for (const x of namesArr) targetNames.add(x);
+              for (const w of wildcardSet) targetNames.add(w);
+            } catch (e) { /* ignore */ }
+          }
+
+          // Always include combinedName as a possible target (harmless if not used)
+          targetNames.add('local-gateway');
+
+          // If the produced cert looks like a combined cert and an identical combined
+          // certificate is already present on disk or in the store, consider the
+          // host already covered and skip importing to avoid duplicate installs.
+          if (producedIsCombined) {
+            // compute existing combined SANs from store entries (CN=local-gateway)
+            const combinedSansFromStore = [];
+            for (const e of entries) {
+              try {
+                const ecns = extractCN(e.subject);
+                if (ecns && ecns.toLowerCase() === 'local-gateway' && Array.isArray(e.sans) && e.sans.length) {
+                  for (const s of e.sans) combinedSansFromStore.push(String(s).toLowerCase());
+                }
+              } catch (err) {}
+            }
+            const existingCombinedSans = Array.from(new Set([...(combinedSansFromDisk||[]), ...combinedSansFromStore]));
+            // If produced combined cert has identical SANs to existing combined cert on disk or in store, skip import
+            const normProducedSans = producedSans.map(s => String(s).toLowerCase()).sort();
+            const normDisk = (combinedSansFromDisk || []).map(s => String(s).toLowerCase()).sort();
+            const equalArrays = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
+            if (combinedSansFromDisk.length > 0 && equalArrays(normProducedSans, normDisk)) {
+              return json(res, 200, { installed: false, ok: true, reason: 'Combined certificate already present on disk with identical SANs.' });
+            }
+            // check store entries for a matching CN=local-gateway with same SANs
+            for (const e of entries) {
+              try {
+                const ecns = extractCN(e.subject);
+                if (ecns && ecns.toLowerCase() === 'local-gateway') {
+                  const esans = Array.isArray(e.sans) ? e.sans.map(x => String(x).toLowerCase()).sort() : [];
+                  if (equalArrays(normProducedSans, esans)) {
+                    return json(res, 200, { installed: false, ok: true, reason: 'Combined certificate already present in store with identical SANs.' });
+                  }
+                }
+              } catch (err) { /* ignore per-entry parse errors */ }
+            }
+            // otherwise fallthrough: if producedIsCombined and produced SANs include the host
+            // we already set shouldDeleteCombined above and will delete/import later.
+          }
+
+          // wildcard-aware matcher: supports entries like '*.example.com' and exact match
+          const hostMatches = (pattern, hostToCheck) => {
+            if (!pattern || !hostToCheck) return false;
+            const p = String(pattern).toLowerCase();
+            const h = String(hostToCheck).toLowerCase();
+            if (p === h) return true;
+            if (p.startsWith('*.')) {
+              const base = p.slice(2);
+              if (h === base) return true;
+              if (h.endsWith('.' + base)) return true;
+            }
+            return false;
+          };
+
+          // matchesTarget checks whether any of the computed targetNames would match the given name
+          const matchesTarget = (name) => {
+            if (!name) return false;
+            const n = name.toLowerCase();
+            if (targetNames.has(n)) return true;
+            for (const t of targetNames) {
+              if (!t) continue;
+              if (hostMatches(t, n)) return true;
+            }
+            return false;
+          };
+
+          // Check if any existing store entry (CN or SANs) already covers the host.
+          const storeCoversHost = (() => {
+            for (const e of entries) {
+              try {
+                const cn = extractCN(e.subject);
+                if (cn && hostMatches(cn, host)) return true;
+                if (Array.isArray(e.sans)) {
+                  for (const s of e.sans) if (hostMatches(s, host)) return true;
+                }
+              } catch (err) { /* ignore entry parse errors */ }
+            }
+            return false;
+          })();
+
+          if (storeCoversHost) {
+            return json(res, 200, {
+              installed: false,
+              ok: true,
+              reason: 'An existing certificate in the store already covers this host (CN or SAN).',
+              combinedSans: Array.from(targetNames)
+            });
+          }
+
+          // --- Simplified CN/SAN flow per request ---
+          // Find any existing combined certificate entries (CN=local-gateway)
+          const combinedEntry = entries.find(e => {
+            try { const c = extractCN(e.subject); return c && String(c).toLowerCase() === 'local-gateway'; } catch (e) { return false; }
+          });
+
+          // Helper to collect combined SANs from store/disk.
+          // IMPORTANT: prefer SANs from the Windows store (combinedEntry.sans) if present
+          // because the on-disk combined certificate may have been regenerated already
+          // (e.g. when adding a new app) and we should not trust disk to decide whether
+          // the store already contains the new SANs.
+          const existingCombinedSans = new Set();
+          if (combinedEntry && Array.isArray(combinedEntry.sans) && combinedEntry.sans.length > 0) {
+            for (const s of combinedEntry.sans) existingCombinedSans.add(String(s).toLowerCase());
+          } else if (Array.isArray(combinedSansFromDisk)) {
+            for (const s of combinedSansFromDisk) existingCombinedSans.add(String(s).toLowerCase());
+          }
+
+          // If combined CN exists
+          if (combinedEntry) {
+            // Check whether the existing combined cert already contains the installing host
+            let hostCovered = false;
+            for (const s of existingCombinedSans) {
+              if (hostMatches(s, host)) { hostCovered = true; break; }
+            }
+            if (producedIsCombined) {
+              // compute existing combined SANs from store entries (CN=local-gateway)
+              const combinedSansFromStore = [];
+              for (const e of entries) {
+                try {
+                  const ecns = extractCN(e.subject);
+                  if (ecns && ecns.toLowerCase() === 'local-gateway' && Array.isArray(e.sans) && e.sans.length) {
+                    for (const s of e.sans) combinedSansFromStore.push(String(s).toLowerCase());
+                  }
+                } catch (err) {}
+              }
+              // Prefer store SANs if present (we set existingCombinedSans earlier from combinedEntry)
+              const existingCombinedSans = new Set();
+              if (combinedEntry && Array.isArray(combinedEntry.sans) && combinedEntry.sans.length > 0) {
+                for (const s of combinedEntry.sans) existingCombinedSans.add(String(s).toLowerCase());
+              } else if (Array.isArray(combinedSansFromDisk)) {
+                for (const s of combinedSansFromDisk) existingCombinedSans.add(String(s).toLowerCase());
+              } else if (combinedSansFromStore.length > 0) {
+                for (const s of combinedSansFromStore) existingCombinedSans.add(String(s).toLowerCase());
+              }
+
+              // Only check whether the installing host is present in existing combined SANs.
+              const hostLower = String(host).toLowerCase();
+              const hostAlreadyCovered = Array.from(existingCombinedSans).some(s => hostMatches(s, hostLower));
+              if (hostAlreadyCovered) {
+                return json(res, 200, { installed: false, ok: true, reason: 'Combined certificate in store already contains this host.' });
+              }
+
+              // If produced SANs include the host and store does not, we'll replace the store entry (shouldDeleteCombined was set earlier)
+              // Otherwise fall through and continue with deletion/import logic below.
+            }
+            const subsumedByCombined = entries.some(e => {
+              try {
+                const subj = (e.subject || '').toLowerCase();
+                const mcn = extractCN(subj);
+                const cnName = mcn ? String(mcn).trim().toLowerCase() : null;
+                if (cnName && matchesTarget(cnName)) return true;
+                if (Array.isArray(e.sans)) {
+                  for (const s of e.sans) if (matchesTarget(s)) return true;
+                }
+              } catch (ee) { /* ignore per-entry parse errors */ }
+              return false;
+            });
+            if (subsumedByCombined && !confirm) {
+              return json(res, 200, {
+                installed: false,
+                needsConfirmation: true,
+                reason: 'Delete Certificate',
+                producedCert: { subject: producedSubject, sans: producedSans },
+                combinedSans: Array.from(targetNames)
+              });
+            }
+          }
+
+          if (!combinedEntry) {
+            await new Promise((resolve, reject) => {
+              const args = ['-user', '-addstore', 'Root', result.certPath];
+              const p = spawn('certutil.exe', args, { stdio: 'inherit' });
+              p.on('exit', (code) => code === 0 ? resolve() : reject(new Error('certutil exit code '+code)));
+              p.on('error', (err) => reject(err));
+            });
+            return json(res, 200, { installed: true, host, importedToStore: true, deleted: 0, deletedThumbs: [] });
+          }
+
+          // If the produced certificate is NOT the combined cert and we have not been
+          // explicitly confirmed, check whether a combined cert exists (CN first) or
+          // whether any existing per-host certificates in the store would be subsumed
+          // by the computed combined SANs. If so, require explicit confirmation before
+          // replacing them with a single combined cert.
+          const toDelete = [];
+          if (!shouldDeleteCombined) {
+            const combinedOnDisk = fs.existsSync(combinedCertPath);
+            if (combinedOnDisk) {
+              const hostLower = host.toLowerCase();
+              // If we were able to parse SANs from disk, use that to decide coverage.
+              // If SANs from disk are missing (combinedSansFromDisk empty), require explicit confirmation
+              // so the user can choose to replace the existing combined cert with an updated one.
+              const combinedHasDiskSans = Array.isArray(combinedSansFromDisk) && combinedSansFromDisk.length > 0;
+              const combinedAlreadyCovers = combinedHasDiskSans && (matchesTarget(hostLower) || producedSans.some(s => matchesTarget(s)));
+              if (combinedAlreadyCovers) {
+                // Combined cert already covers this host — no replacement needed.
+                return json(res, 200, {
+                  installed: false,
+                  ok: true,
+                  reason: 'Existing combined certificate already covers this host; no replacement required.',
+                  combinedSans: Array.from(targetNames)
+                });
+              }
+              // If we couldn't parse SANs from the existing combined cert, ask for confirmation to replace
+              // rather than silently assuming coverage or skipping the install.
+              return json(res, 200, {
+                installed: false,
+                needsConfirmation: true,
+                reason: combinedHasDiskSans ? 'A combined local certificate (CN=local-gateway) exists but does not include this host in its SANs. Confirm deletion to replace it.' : 'A combined local certificate (CN=local-gateway) exists but its SANs could not be determined. Confirm deletion to replace it with an updated combined cert.',
+                producedCert: { subject: producedSubject, sans: producedSans },
+                combinedSans: Array.from(targetNames)
+              });
+            }
+
+            // No combined cert on disk. Look for existing per-host certs in the store
+            // that would be subsumed by the new combined SANs (for example,
+            // 'local.console' would be subsumed by a '*.local.console' wildcard).
+            const subsumed = [];
+            for (const e of entries) {
+              try {
+                const subj = (e.subject || '').toLowerCase();
+                const mcn = extractCN(subj);
+                const cnName = mcn ? String(mcn).trim().toLowerCase() : null;
+                if (!cnName) continue;
+                if (matchesTarget(cnName)) subsumed.push({ thumb: e.thumbprint, cn: cnName });
+              } catch (ee) { /* ignore per-entry parse errors */ }
+            }
+            if (subsumed.length > 0) {
+              // There are existing per-host certs that would be replaced by a combined cert.
+              // Ask the user to confirm replacement rather than silently importing a new
+              // per-host cert which would later cause duplicate installs.
+              return json(res, 200, {
+                installed: false,
+                needsConfirmation: true,
+                reason: 'Existing per-host certificates found that would be subsumed by a combined wildcard certificate. Confirm replacement to update to a combined cert.',
+                producedCert: { subject: producedSubject, sans: producedSans },
+                combinedSans: Array.from(targetNames),
+                subsumed: subsumed
+              });
+            }
+            // otherwise fall through and import without deleting
+          } else {
+            // When updating the combined cert (or user confirmed), delete any existing
+            // combined cert entries (CN=local-gateway) AND any per-host entries that
+            // would be subsumed by the new combined/wildcard cert. This is conservative
+            // and only runs when the installer produced a combined cert (or the user
+            // explicitly confirmed replacement).
+            for (const e of entries) {
+              try {
+                const subj = (e.subject || '').toLowerCase();
+                const mcn = extractCN(subj);
+                const cnName = mcn ? String(mcn).trim().toLowerCase() : null;
+                if (!cnName) continue;
+                // Always delete existing combined certs with CN=local-gateway
+                if (cnName === 'local-gateway') {
+                  toDelete.push(e.thumbprint);
+                  continue;
+                }
+                // If the produced cert is combined (or user confirmed), also delete
+                // per-host certs whose CN would be covered by the new combined SANs.
+                if (producedIsCombined) {
+                  const matchesTarget = (name) => {
+                    if (!name) return false;
+                    const n = name.toLowerCase();
+                    if (targetNames.has(n)) return true;
+                    for (const t of targetNames) {
+                      if (!t) continue;
+                      if (t.startsWith('*.')) {
+                        const base = t.slice(2).toLowerCase();
+                        if (n === base) return true;
+                        if (n.endsWith('.' + base)) return true;
+                      }
+                    }
+                    return false;
+                  };
+                  if (matchesTarget(cnName)) {
+                    toDelete.push(e.thumbprint);
+                    continue;
+                  }
+                }
+              } catch (ee) {
+                // ignore per-entry parse errors
+              }
+            }
+            console.log('[cert] toDelete for combined update (including per-host):', toDelete);
+          }
+
+          // Attempt deletion from both CurrentUser and machine stores for each matching thumbprint
+          const deletedThumbs = [];
+          for (const t of toDelete) {
+            try {
+              // Try user store
+              await new Promise((resolve, reject) => {
+                const p = spawn('certutil.exe', ['-user', '-delstore', 'Root', t], { stdio: 'inherit' });
+                p.on('exit', c => c === 0 ? resolve() : reject(new Error('delstore exit '+c)));
+                p.on('error', err => reject(err));
+              });
+              deletedThumbs.push(t);
+            } catch (e2) {
+              // give up on this thumbprint
+            }
+          }
+          console.log('[cert] deletedThumbs:', deletedThumbs);
+
+          // Now add new cert (always attempt import even if we didn't delete anything)
           await new Promise((resolve, reject) => {
             const args = ['-user', '-addstore', 'Root', result.certPath];
             const p = spawn('certutil.exe', args, { stdio: 'inherit' });
             p.on('exit', (code) => code === 0 ? resolve() : reject(new Error('certutil exit code '+code)));
             p.on('error', (err) => reject(err));
           });
-          json(res, 200, { installed: true, host, importedToStore: true });
+          json(res, 200, { installed: true, host, importedToStore: true, deleted: deletedThumbs.length, deletedThumbs, deletionAttempted: shouldDeleteCombined });
         } catch (e) {
           console.error('certutil import failed', e);
-          json(res, 200, { installed: true, host, importedToStore: false, importError: e.message });
+          json(res, 200, { installed: true, host, importedToStore: false, importError: e.message, deletionAttempted: false });
         }
       } else {
         json(res, 200, { installed: true, host, ok: !!result });
@@ -172,6 +726,26 @@ export function installAdminApi(server, { manager, token, certInstaller }) {
       }
     } catch (e) {
       return json(res, 500, { error: e.message });
+    }
+  });
+
+  // Return combined local certificate SANs (if present) so UI can check coverage
+  add('GET', /^\/admin\/cert\/sans$/i, async (req, res) => {
+    try {
+      const storeDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../storage');
+  const combinedCertPath = path.join(storeDir, 'local-gateway.crt');
+      if (!fs.existsSync(combinedCertPath)) return json(res, 200, { sans: [] });
+      const pem = fs.readFileSync(combinedCertPath, 'utf8');
+      const { X509Certificate } = crypto;
+      const x = new X509Certificate(pem);
+      const sanRaw = x.subjectAltName || '';
+      const sans = [];
+      const dnsRe = /DNS:([^,\s]+)/g;
+      let m;
+      while ((m = dnsRe.exec(sanRaw)) !== null) sans.push(m[1]);
+      json(res, 200, { sans });
+    } catch (e) {
+      json(res, 500, { error: e.message });
     }
   });
 

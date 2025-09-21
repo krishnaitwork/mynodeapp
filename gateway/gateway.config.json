@@ -43,6 +43,11 @@
         "local.stacktrades"
       ],
       "staticDir": "C:/KP/GitLab/react/stacktrades/build-local"
+    },
+    {
+      "host": "abc.com",
+      "preserveHost": false,
+      "altNames": []
     }
   ]
 }

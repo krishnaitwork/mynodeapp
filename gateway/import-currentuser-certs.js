@@ -38,7 +38,7 @@ function isLocalDomain(d) {
   return s.includes('.local') || s.includes('local.') || s.includes('localhost') || s.includes('.console');
 }
 
-// If all configured domains are local-like, prefer a single combined cert (local-combined.crt)
+// If all configured domains are local-like, prefer a single combined cert (local-gateway.crt)
 const allLocal = Array.from(configDomains).length > 0 && Array.from(configDomains).every(isLocalDomain);
 let crtFiles = [];
 if (allLocal) {
