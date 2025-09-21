@@ -4,7 +4,7 @@ import { URL, fileURLToPath } from 'node:url';
 import crypto from 'node:crypto';
 
 // Minimal router without external deps
-export function installAdminApi(server, { manager, token, certInstaller }) {
+export function installAdminApi(server, { manager, token, certInstaller, adminWs }) {
   const routes = [];
   const add = (method, pattern, handler) => routes.push({ method, pattern, handler });
 
@@ -125,6 +125,32 @@ export function installAdminApi(server, { manager, token, certInstaller }) {
       console.error('Logs API error:', e);
       json(res, 400, { error: e.message }); 
     }
+  });
+
+  // Start/stop admin WebSocket runtime control (requires auth)
+  add('POST', /^\/admin\/ws\/start$/i, async (req, res) => {
+    try {
+      if (!auth(req, res)) return;
+      if (!('adminWs' in arguments.callee)) {
+        // adminWs passed via options is available as closure var `adminWs` below
+      }
+      if (typeof adminWs === 'object' && adminWs && typeof adminWs.start === 'function') {
+        adminWs.start();
+        return json(res, 200, { running: adminWs.running ? adminWs.running() : true });
+      }
+      return json(res, 400, { error: 'adminWs not available' });
+    } catch (e) { json(res, 500, { error: e.message }); }
+  });
+
+  add('POST', /^\/admin\/ws\/stop$/i, async (req, res) => {
+    try {
+      if (!auth(req, res)) return;
+      if (typeof adminWs === 'object' && adminWs && typeof adminWs.stop === 'function') {
+        await adminWs.stop();
+        return json(res, 200, { running: adminWs.running ? adminWs.running() : false });
+      }
+      return json(res, 400, { error: 'adminWs not available' });
+    } catch (e) { json(res, 500, { error: e.message }); }
   });
 
   // Trigger certificate installation/generation for a single host (sync to ensureCert in gateway)

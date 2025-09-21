@@ -13,9 +13,28 @@ export function installAdminWs(server, { manager, token }) {
 
   const forwardEvent = (type, payload) => broadcast({ type, ...payload });
   const events = ['app-start','app-stop','app-exit','app-log','app-added','app-removed','app-updated','config-saved'];
-  events.forEach(ev => manager.on(ev, (payload) => forwardEvent(ev, payload)));
 
-  server.on('upgrade', (req, socket, head) => {
+  // manager handlers map so we can detach later
+  const mgrHandlers = Object.create(null);
+
+  const attachManagerHandlers = () => {
+    for (const ev of events) {
+      const h = (payload) => forwardEvent(ev, payload);
+      mgrHandlers[ev] = h;
+      manager.on(ev, h);
+    }
+  };
+
+  const detachManagerHandlers = () => {
+    for (const ev of events) {
+      const h = mgrHandlers[ev];
+      if (h) manager.off(ev, h);
+      delete mgrHandlers[ev];
+    }
+  };
+
+  // Upgrade handler - kept separate so it can be added/removed from server
+  const upgradeHandler = (req, socket, head) => {
     if (!req.url.startsWith('/admin/ws')) return; // ignore others
     try {
       const url = new URL(req.url, 'http://localhost');
@@ -28,12 +47,33 @@ export function installAdminWs(server, { manager, token }) {
       }
       wss.handleUpgrade(req, socket, head, (ws) => {
         wss.emit('connection', ws, req);
-        ws.send(JSON.stringify({ type: 'welcome', time: Date.now(), apps: manager.listApps() }));
+        try { ws.send(JSON.stringify({ type: 'welcome', time: Date.now(), apps: manager.listApps() })); } catch(_){}
       });
     } catch (e) {
-      socket.destroy();
+      try { socket.destroy(); } catch(_){}
     }
-  });
+  };
 
-  return { wss };
+  let running = false;
+
+  function start() {
+    if (running) return;
+    attachManagerHandlers();
+    server.on('upgrade', upgradeHandler);
+    running = true;
+  }
+
+  async function stop() {
+    if (!running) return;
+    try { server.off('upgrade', upgradeHandler); } catch(_){}
+    detachManagerHandlers();
+    try { wss.clients.forEach(c => { try { c.terminate(); } catch(_){} }); } catch(_){}
+    try { await new Promise((resolve) => wss.close(() => resolve())); } catch(_){}
+    running = false;
+  }
+
+  // Start by default to preserve existing behavior
+  start();
+
+  return { wss, start, stop, running: () => running };
 }
