@@ -148,6 +148,16 @@ form#create button{grid-column:1/-1;margin-top:4px}
     </div>
   </div>
 </div>
+<!-- Generic confirmation modal (responsive) -->
+<div id="genericConfirmModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);align-items:center;justify-content:center;z-index:62">
+  <div style="background:var(--panel);border:1px solid var(--border);padding:14px;border-radius:12px;min-width:260px;max-width:560px;color:var(--text);box-shadow:var(--shadow)">
+    <div id="genericConfirmMessage" style="font-weight:600;margin-bottom:10px;color:var(--text)"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button id="genericConfirmCancel" class="secondary">Cancel</button>
+      <button id="genericConfirmOk" class="primary">OK</button>
+    </div>
+  </div>
+</div>
 <script>
 // Theme Management
 const themeToggle = document.getElementById('themeToggle');
@@ -249,7 +259,26 @@ async function render(apps){
 async function refresh(){try{const d=await api('/admin/apps');render(d.apps);}catch(e){statusLine.textContent='ERR '+e.message;}}
 async function doAct(h,a){try{await api(`/admin/apps/${h}/${a}`,'POST');statusLine.textContent=`${a} sent`;setTimeout(refresh,400);}catch(e){alert(e);}}
 async function toggleEnable(h,disabled){try{await api(`/admin/apps/${h}/${disabled?'enable':'disable'}`,'POST');statusLine.textContent='toggle sent';setTimeout(refresh,400);}catch(e){alert(e);}}
-async function delApp(h){if(!confirm('Delete '+h+'?'))return;try{await api(`/admin/apps/${h}`,'DELETE');refresh();}catch(e){alert(e);}}
+// Generic modal-based confirmation helper
+function showConfirm(message){
+  return new Promise(resolve=>{
+    const modal=document.getElementById('genericConfirmModal');
+    const msg=document.getElementById('genericConfirmMessage');
+    const ok=document.getElementById('genericConfirmOk');
+    const cancel=document.getElementById('genericConfirmCancel');
+    msg.textContent=message;
+    modal.style.display='flex';
+    const cleanup=()=>{ modal.style.display='none'; ok.onclick=null; cancel.onclick=null; };
+    cancel.onclick = ()=>{ cleanup(); resolve(false); };
+    ok.onclick = ()=>{ cleanup(); resolve(true); };
+  });
+}
+
+async function delApp(h){
+  const ok = await showConfirm('Delete '+h+'?');
+  if(!ok) return;
+  try{ await api(`/admin/apps/${h}`,'DELETE'); refresh(); } catch(e){ alert(e); }
+}
 
 // Install certificate for a single app (per-card action)
 async function installCert(h){
