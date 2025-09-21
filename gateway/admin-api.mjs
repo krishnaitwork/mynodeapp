@@ -38,6 +38,11 @@ export function installAdminApi(server, { manager, token, certInstaller }) {
     req.on('end', () => {
       try {
         const data = JSON.parse(body || '{}');
+        // Basic validation: host is required and must be a non-empty string
+        if (!data || typeof data.host !== 'string' || !data.host.trim()) {
+          return json(res, 400, { error: 'missing required field: host' });
+        }
+        data.host = String(data.host).trim();
         const created = manager.addApp(data);
         json(res, 201, created);
       } catch (e) { json(res, 400, { error: e.message }); }
@@ -56,6 +61,10 @@ export function installAdminApi(server, { manager, token, certInstaller }) {
     req.on('end', () => {
       try {
         const partial = JSON.parse(body || '{}');
+        // Disallow changing the host identifier via patch
+        if (partial && Object.prototype.hasOwnProperty.call(partial, 'host')) {
+          return json(res, 400, { error: 'cannot change host via patch' });
+        }
         const app = manager.updateApp(m[1], partial);
         json(res, 200, app);
       } catch (e) { json(res, 400, { error: e.message }); }
@@ -317,9 +326,12 @@ export function installAdminApi(server, { manager, token, certInstaller }) {
 
           // Detect whether the produced certificate is a combined/wildcard certificate.
           const producedIsCombined = (producedCertCN === 'local-gateway') || producedSans.some(s => typeof s === 'string' && String(s).startsWith('*.'));
-          // If the produced combined cert explicitly contains the installing host in its SANs
-          // (or is CN=local-gateway), treat this as a replacement: delete existing combined cert and import the new one.
-          let shouldDeleteCombined = producedIsCombined || producedSans.some(s => matchesPatternSimple(s, host)) || confirm;
+          // Only treat this as a replacement for the combined 'local-gateway' cert when
+          // the produced cert is itself combined (CN=local-gateway or contains wildcards)
+          // or when the caller explicitly confirmed via ?confirm=1. Non-combined (normal)
+          // certificates like CN=abc.com must not cause the local combined cert to be
+          // deleted.
+          let shouldDeleteCombined = producedIsCombined || confirm;
           console.log('[cert] host:', host, 'producedCertCN:', producedCertCN, 'produedIsCombined:', producedIsCombined, 'shouldDeleteCombined:', shouldDeleteCombined, 'confirm:', confirm);
 
           // Build a conservative target set: prefer SANs from existing combined cert (if present),
@@ -347,17 +359,27 @@ export function installAdminApi(server, { manager, token, certInstaller }) {
           } catch (e) { /* ignore */ }
 
           // If we couldn't derive SANs from disk, compute expected local names similar to ensureCert
+          const isLocalLike = (h) => {
+            if (!h) return false;
+            const s = String(h).toLowerCase();
+            return s.includes('.local') || s.includes('local.') || s.includes('localhost') || s.includes('.console') || s.includes('local');
+          };
+
           if (targetNames.size === 0) {
             try {
               const localNames = new Set();
-              localNames.add(host.toLowerCase());
+              // Only include the installing host in the combined-local target set
+              // when it is local-like (contains 'local' or similar). Non-local
+              // hosts (like 'abc.com') should not cause the local-gateway
+              // certificate to be replaced.
+              if (isLocalLike(host)) localNames.add(host.toLowerCase());
               for (const a of manager.listApps()) {
                 if (!a || !a.host) continue;
                 const h = String(a.host).toLowerCase();
-                if (h.includes('.local') || h.includes('local.') || h.includes('localhost') || h.includes('.console')) localNames.add(h);
+                if (isLocalLike(h)) localNames.add(h);
                 if (Array.isArray(a.altNames)) for (const alt of a.altNames) {
                   const altS = String(alt).toLowerCase();
-                  if (altS.includes('.local') || altS.includes('local.') || altS.includes('localhost') || altS.includes('.console')) localNames.add(altS);
+                  if (isLocalLike(altS)) localNames.add(altS);
                 }
               }
               const namesArr = Array.from(localNames);
@@ -521,26 +543,32 @@ export function installAdminApi(server, { manager, token, certInstaller }) {
               // If produced SANs include the host and store does not, we'll replace the store entry (shouldDeleteCombined was set earlier)
               // Otherwise fall through and continue with deletion/import logic below.
             }
-            const subsumedByCombined = entries.some(e => {
-              try {
-                const subj = (e.subject || '').toLowerCase();
-                const mcn = extractCN(subj);
-                const cnName = mcn ? String(mcn).trim().toLowerCase() : null;
-                if (cnName && matchesTarget(cnName)) return true;
-                if (Array.isArray(e.sans)) {
-                  for (const s of e.sans) if (matchesTarget(s)) return true;
-                }
-              } catch (ee) { /* ignore per-entry parse errors */ }
-              return false;
-            });
-            if (subsumedByCombined && !confirm) {
-              return json(res, 200, {
-                installed: false,
-                needsConfirmation: true,
-                reason: 'Delete Certificate',
-                producedCert: { subject: producedSubject, sans: producedSans },
-                combinedSans: Array.from(targetNames)
+            // Only consider existing entries as 'subsumed by combined' when the
+            // produced certificate itself is a combined/wildcard certificate. A
+            // non-combined produced cert (e.g., CN=abc.com) should not cause the
+            // UI to prompt for deleting the combined local-gateway certificate.
+            if (producedIsCombined) {
+              const subsumedByCombined = entries.some(e => {
+                try {
+                  const subj = (e.subject || '').toLowerCase();
+                  const mcn = extractCN(subj);
+                  const cnName = mcn ? String(mcn).trim().toLowerCase() : null;
+                  if (cnName && matchesTarget(cnName)) return true;
+                  if (Array.isArray(e.sans)) {
+                    for (const s of e.sans) if (matchesTarget(s)) return true;
+                  }
+                } catch (ee) { /* ignore per-entry parse errors */ }
+                return false;
               });
+              if (subsumedByCombined && !confirm) {
+                return json(res, 200, {
+                  installed: false,
+                  needsConfirmation: true,
+                  reason: 'Delete Certificate',
+                  producedCert: { subject: producedSubject, sans: producedSans },
+                  combinedSans: Array.from(targetNames)
+                });
+              }
             }
           }
 
@@ -578,15 +606,20 @@ export function installAdminApi(server, { manager, token, certInstaller }) {
                   combinedSans: Array.from(targetNames)
                 });
               }
-              // If we couldn't parse SANs from the existing combined cert, ask for confirmation to replace
-              // rather than silently assuming coverage or skipping the install.
-              return json(res, 200, {
-                installed: false,
-                needsConfirmation: true,
-                reason: combinedHasDiskSans ? 'A combined local certificate (CN=local-gateway) exists but does not include this host in its SANs. Confirm deletion to replace it.' : 'A combined local certificate (CN=local-gateway) exists but its SANs could not be determined. Confirm deletion to replace it with an updated combined cert.',
-                producedCert: { subject: producedSubject, sans: producedSans },
-                combinedSans: Array.from(targetNames)
-              });
+              // Only ask for confirmation to replace the combined cert when the produced
+              // certificate is itself combined. Non-combined produced certs (normal
+              // per-host certificates) should not prompt to replace the combined cert.
+              if (producedIsCombined) {
+                return json(res, 200, {
+                  installed: false,
+                  needsConfirmation: true,
+                  reason: combinedHasDiskSans ? 'A combined local certificate (CN=local-gateway) exists but does not include this host in its SANs. Confirm deletion to replace it.' : 'A combined local certificate (CN=local-gateway) exists but its SANs could not be determined. Confirm deletion to replace it with an updated combined cert.',
+                  producedCert: { subject: producedSubject, sans: producedSans },
+                  combinedSans: Array.from(targetNames)
+                });
+              }
+              // If produced cert is NOT combined, fall through and continue (we will
+              // handle per-host replacement below without prompting the user).
             }
 
             // No combined cert on disk. Look for existing per-host certs in the store
@@ -599,21 +632,46 @@ export function installAdminApi(server, { manager, token, certInstaller }) {
                 const mcn = extractCN(subj);
                 const cnName = mcn ? String(mcn).trim().toLowerCase() : null;
                 if (!cnName) continue;
-                if (matchesTarget(cnName)) subsumed.push({ thumb: e.thumbprint, cn: cnName });
+                // If the produced cert is combined, then existing per-host certs that
+                // would be covered by the combined targets are considered subsumed.
+                // If produced cert is NOT combined, only consider exact CN matches to
+                // avoid deleting unrelated entries (particularly the local-gateway).
+                if (producedIsCombined) {
+                  if (matchesTarget(cnName)) subsumed.push({ thumb: e.thumbprint, cn: cnName });
+                } else {
+                  if (producedCertCN && cnName === String(producedCertCN).toLowerCase()) subsumed.push({ thumb: e.thumbprint, cn: cnName });
+                }
               } catch (ee) { /* ignore per-entry parse errors */ }
             }
             if (subsumed.length > 0) {
-              // There are existing per-host certs that would be replaced by a combined cert.
-              // Ask the user to confirm replacement rather than silently importing a new
-              // per-host cert which would later cause duplicate installs.
-              return json(res, 200, {
-                installed: false,
-                needsConfirmation: true,
-                reason: 'Existing per-host certificates found that would be subsumed by a combined wildcard certificate. Confirm replacement to update to a combined cert.',
-                producedCert: { subject: producedSubject, sans: producedSans },
-                combinedSans: Array.from(targetNames),
-                subsumed: subsumed
-              });
+              if (producedIsCombined) {
+                // There are existing per-host certs that would be replaced by a combined cert.
+                // Ask the user to confirm replacement rather than silently importing a new
+                // per-host cert which would later cause duplicate installs.
+                return json(res, 200, {
+                  installed: false,
+                  needsConfirmation: true,
+                  reason: 'Existing per-host certificates found that would be subsumed by a combined wildcard certificate. Confirm replacement to update to a combined cert.',
+                  producedCert: { subject: producedSubject, sans: producedSans },
+                  combinedSans: Array.from(targetNames),
+                  subsumed: subsumed
+                });
+              } else {
+                // Produced cert is non-combined (per-host). Automatically delete exact-CN duplicates
+                // (subsumed contains only exact-CN matches in this case) and proceed to import.
+                for (const s of subsumed) {
+                  try {
+                    await new Promise((resolve, reject) => {
+                      const p = spawn('certutil.exe', ['-user', '-delstore', 'Root', s.thumb], { stdio: 'inherit' });
+                      p.on('exit', c => c === 0 ? resolve() : reject(new Error('delstore exit '+c)));
+                      p.on('error', err => reject(err));
+                    });
+                  } catch (e) {
+                    // ignore deletion failures and proceed to import; user can manually clean up
+                  }
+                }
+                // fall through to import below
+              }
             }
             // otherwise fall through and import without deleting
           } else {
