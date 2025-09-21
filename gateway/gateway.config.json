@@ -34,7 +34,8 @@
         "port": 3000,
         "rejectUnauthorized": false
       },
-      "healthUrl": "http://127.0.0.1:3000/health"
+      "healthUrl": "http://127.0.0.1:3000/health",
+      "disabled": false
     },
     {
       "# static-site": "Serve a built React app (spa) from disk. Useful for production or a built prototype",

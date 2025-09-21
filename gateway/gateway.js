@@ -656,6 +656,17 @@ httpsSrv.on('error', (err) => {
 
 startServers();
 
+// Diagnostic: log unexpected exits and errors to help debugging
+process.on('exit', (code) => {
+  try { console.log('process.exit event, code=' + code); } catch(_){}
+});
+process.on('uncaughtException', (err) => {
+  try { console.error('uncaughtException:', err && err.stack ? err.stack : err); } catch(_){}
+});
+process.on('unhandledRejection', (reason) => {
+  try { console.error('unhandledRejection:', reason); } catch(_){}
+});
+
 // Graceful shutdown
 process.on('SIGINT', () => {
   console.log('Shutting down servers...');
