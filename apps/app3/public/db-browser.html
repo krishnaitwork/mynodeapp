@@ -1,0 +1,485 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>DB Browser</title>
+  <style>
+    :root{
+      --sidebar-width:280px;
+      --gap:16px;
+      --muted:#6b7280;
+      --row-alt:#fbfbfb;
+      --border:#e5e7eb;
+      --header-bg:#ffffff;
+      --font-sans: Inter, Roboto, Arial, Helvetica, sans-serif;
+      --dark-bg: #0b1220;
+      --dark-panel: #0f1724;
+      --dark-text: #e6eef8;
+    }
+    html,body{height:100%;}
+  body { font-family: var(--font-sans); margin: 0; padding: 12px; color:#111827; background:#fafafa; display:flex; flex-direction:column; }
+    header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+    h2{margin:0;font-size:1.25rem}
+  .container{display:flex;gap:var(--gap);align-items:flex-start;flex:1;min-height:0}
+  .sidebar{width:var(--sidebar-width);min-width:160px;background:#fff;border:1px solid var(--border);border-radius:6px;padding:8px;box-shadow:0 1px 2px rgba(16,24,40,0.03);overflow:auto;position:sticky;top:12px;max-height:calc(100vh - 48px)}
+  .main{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0}
+    .controls{display:flex;gap:8px;align-items:center}
+    .controls input[type=file]{display:inline-block}
+    .file-info{margin-top:8px;font-size:0.9em;color:var(--muted)}
+    .table-list{margin-top:8px}
+    .table-item{padding:8px 10px;cursor:pointer;border-radius:4px;border-bottom:1px solid var(--border);font-size:0.95rem}
+    .table-item:hover{background:#f8fafc}
+    .table-item.active{background:#eef2ff}
+  .toolbar{display:flex;align-items:flex-start;gap:12px;margin-bottom:8px;flex-wrap:nowrap}
+    .small{font-size:0.9em;color:var(--muted)}
+    .toolbar .left, .toolbar .right{display:flex;align-items:center;gap:8px}
+    .toolbar button{padding:6px 8px;border-radius:6px}
+    .toolbar button:active{transform:translateY(1px)}
+    .sidebar .small strong{display:block;margin-bottom:6px}
+  .toolbar .query-col{flex:1;min-width:280px}
+  .toolbar .query-col textarea{width:100%;height:160px;padding:8px;border-radius:6px;border:1px solid var(--border);resize:vertical}
+  .toolbar .controls-col{width:260px;display:flex;flex-direction:column;gap:10px;align-items:flex-start}
+  /* compact, text-style buttons that will stretch to match editor height */
+  .buttons-vertical{display:flex;flex-direction:column;gap:8px;width:100%;align-items:stretch}
+  .buttons-vertical button{height:36px;padding:6px 8px;background:transparent;border:1px solid rgba(0,0,0,0.08);border-radius:6px;font-size:0.9rem;color:var(--muted);text-align:center}
+  .buttons-vertical button:hover{background:rgba(0,0,0,0.02);color:#111}
+  .buttons-vertical button:active{transform:translateY(1px)}
+  .text-small{background:transparent;border:0;color:#111;font-size:0.9rem;padding:4px 6px}
+
+    /* Table area */
+  /* Table region: results header stays above the scrollable table-inner */
+  .table-wrap{background:#fff;border:1px solid var(--border);border-radius:6px;flex:1;box-shadow:0 1px 2px rgba(16,24,40,0.03);display:flex;flex-direction:column;min-height:0}
+  .table-inner{flex:1;min-width:100%;overflow:auto}
+  table{border-collapse:collapse;width:100%;min-width:900px;table-layout:fixed;font-size:0.95rem}
+    thead th{position:sticky;top:0;background:var(--header-bg);z-index:3;padding:10px 12px;border-bottom:1px solid var(--border);text-align:left}
+    tbody td{padding:10px 12px;border-bottom:1px solid var(--border);vertical-align:top;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    tbody tr:nth-child(even){background:var(--row-alt)}
+    tbody tr:hover{background:#fff8e6}
+    th:first-child, td:first-child{width:160px}
+
+    /* make header visually separate when scrolling */
+    thead th::after{content:'';display:block;height:4px;background:linear-gradient(180deg, rgba(0,0,0,0.03), transparent);position:relative;top:8px}
+
+    /* Responsive: collapse sidebar below 900px */
+    @media (max-width: 1100px){
+      .container{flex-direction:column}
+      .sidebar{width:100%;height:auto;max-height:260px;position:relative}
+      .main{min-height:0}
+      thead th, tbody td{padding:8px}
+      table{min-width:700px}
+      .toolbar{flex-wrap:wrap}
+    }
+
+    /* Mobile friendly: allow horizontal scroll */
+    @media (max-width: 600px){
+      thead th, tbody td{white-space:normal;font-size:0.9rem}
+      .table-wrap{overflow:auto}
+      .toolbar{gap:8px;flex-wrap:wrap}
+      .toolbar .query-col, .toolbar .controls-col{width:100%}
+      .toolbar .controls-col{align-items:stretch}
+      .buttons-vertical button{width:100%}
+    }
+    @media (pointer:coarse){
+      /* touch devices: make buttons easier to tap */
+      .toolbar button{padding:10px 12px}
+      .table-item{padding:12px 14px}
+    }
+    /* results header */
+    .results-header{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-bottom:1px solid var(--border);background:linear-gradient(180deg,#fff,#fafafa)}
+    .saved-db-header{font-weight:600;margin-bottom:6px}
+    .saved-db-path{font-size:0.8rem;color:var(--muted)}
+  </style>
+</head>
+<body>
+  <!-- header removed per user request; controls moved into toolbar -->
+
+  <div class="container">
+    <aside class="sidebar" id="sidebar">
+      <div class="file-info" id="fileInfo">No database loaded</div>
+      <div style="margin-top:8px;border-top:1px dashed var(--border);padding-top:8px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <div class="small">Saved DBs</div>
+          <button id="scanSaved">Refresh</button>
+        </div>
+        <div id="savedList" class="small"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div class="small">Tables</div>
+        <div class="small" id="tableCount"></div>
+      </div>
+      <div class="table-list" id="tableList"></div>
+      <div style="position:absolute;right:6px;top:6px"><button id="collapseBtn" title="Collapse sidebar">◀</button></div>
+    </aside>
+    <div class="splitter" id="splitter" title="Drag to resize"></div>
+
+    <main class="main">
+      <div class="toolbar">
+        <div class="query-col">
+          <textarea id="querySql" rows="6" placeholder="SELECT * FROM my_table WHERE ..."></textarea>
+        </div>
+        <div class="controls-col">
+          <!-- <label style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="darkMode"/> <strong>Dark</strong></label> -->
+          <div style="display:flex;flex-direction:column;gap:6px;min-width:0">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+              <label class="small" style="white-space:nowrap">Limit rows: <input id="rowLimit" type="number" value="200" min="1" max="2000" style="width:80px;margin-left:6px"/></label>
+              <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
+                <button id="exportJson" class="text-small">Export Json</button>
+                <button id="exportCsv" class="text-small">Export CSV</button>
+              </div>
+            </div>
+            <input id="quickSearch" placeholder="Search rows..." style="min-width:160px;padding:6px;border-radius:4px;border:1px solid var(--border)" />
+          </div>
+          <div style="width:100%;display:flex;flex-direction:column;gap:8px;align-items:stretch">
+            <div class="buttons-vertical">
+              <button id="runQuery">Run</button>
+              <button id="prevPage">Prev</button>
+              <button id="nextPage">Next</button>
+            </div>
+            <!-- export buttons moved to top controls -->
+          </div>
+          <span id="status" class="small" style="margin-top:8px"></span>
+        </div>
+      </div>
+      <div class="results-header"><div id="resultsInfo">Total rows loaded: 0</div><div id="resultsControls" class="small"></div></div>
+      <div class="table-wrap">
+        <div class="table-inner" id="grid"></div>
+      </div>
+    </main>
+  </div>
+
+<script>
+// DOM refs
+const uploadBtn = document.getElementById('uploadBtn');
+const dbfile = document.getElementById('dbfile');
+const status = document.getElementById('status');
+const fileInfo = document.getElementById('fileInfo');
+const tableList = document.getElementById('tableList');
+const grid = document.getElementById('grid');
+const rowLimit = document.getElementById('rowLimit');
+const tableCount = document.getElementById('tableCount');
+const sidebar = document.getElementById('sidebar');
+const splitter = document.getElementById('splitter');
+const collapseBtn = document.getElementById('collapseBtn');
+const sidebarToggle = document.getElementById('sidebarToggle');
+const quickSearch = document.getElementById('quickSearch');
+const prevPage = document.getElementById('prevPage');
+const nextPage = document.getElementById('nextPage');
+const exportCsv = document.getElementById('exportCsv');
+const exportJson = document.getElementById('exportJson');
+const darkMode = document.getElementById('darkMode');
+const savedList = document.getElementById('savedList');
+const scanSaved = document.getElementById('scanSaved');
+const querySql = document.getElementById('querySql');
+const runQuery = document.getElementById('runQuery');
+
+// state
+let currentDbId = null;
+let currentTable = null;
+let currentOffset = 0;
+let currentOrderBy = null;
+let currentOrderDir = 'ASC';
+let currentTotalRows = null;
+
+if (uploadBtn) {
+  uploadBtn.addEventListener('click', async () => {
+    if (!dbfile.files || dbfile.files.length === 0) { alert('Select a sqlite file first'); return; }
+    const f = dbfile.files[0];
+    const fd = new FormData(); fd.append('dbfile', f);
+    status.textContent = 'Uploading...';
+    try {
+      const resp = await fetch('/db/upload', { method: 'POST', body: fd });
+      if (!resp.ok) throw new Error(await resp.text());
+      const js = await resp.json();
+      currentDbId = js.id;
+      fileInfo.textContent = `Loaded: ${js.name}`;
+      status.textContent = '';
+      currentOffset = 0; currentOrderBy = null; currentOrderDir = 'ASC';
+      await loadTables();
+      // refresh saved list
+      await loadSaved();
+    } catch (e) {
+      status.textContent = 'Upload failed: ' + e.message;
+    }
+  });
+}
+
+// load saved DBs
+async function loadSaved(){
+  savedList.innerHTML = '';
+  try{
+    const r = await fetch('/api/databases'); if (!r.ok) throw new Error(await r.text());
+    const js = await r.json(); const list = js.databases || [];
+    if (list.length === 0) { savedList.innerHTML = '<div class="small">No saved DBs</div>'; return; }
+  for (const d of list) {
+      const wrapper = document.createElement('div'); wrapper.style.borderBottom = '1px solid var(--border)'; wrapper.style.padding='6px 4px';
+      const hdr = document.createElement('div'); hdr.style.display='flex'; hdr.style.justifyContent='space-between'; hdr.style.alignItems='center';
+  const left = document.createElement('div'); left.style.flex = '1'; left.innerHTML = `<strong>${d.label}</strong>`;
+  const actions = document.createElement('div'); actions.style.display='flex'; actions.style.gap='6px'; actions.style.alignItems='center';
+  const expandBtn = document.createElement('button'); expandBtn.textContent = '+';
+  const addIcon = document.createElement('button'); addIcon.title = 'Add / Upload DB'; addIcon.innerHTML = '➕'; addIcon.style.fontSize='14px'; addIcon.addEventListener('click', ()=>{ dbfile.click(); });
+  actions.appendChild(expandBtn); actions.appendChild(addIcon);
+      hdr.appendChild(left); hdr.appendChild(actions);
+  const tableContainer = document.createElement('div'); tableContainer.style.marginTop='6px'; tableContainer.style.display='none'; tableContainer.className='small';
+      expandBtn.addEventListener('click', async ()=>{
+        // collapse others
+        Array.from(savedList.children).forEach(child => {
+          const btn = child.querySelector('button'); const cont = child.querySelector('div.small');
+          if (btn && btn !== expandBtn) { btn.textContent = '+'; if (cont) cont.style.display = 'none'; }
+        });
+        if (tableContainer.style.display === 'none'){
+          // expand this one and set as default DB
+          tableContainer.style.display = '';
+          expandBtn.textContent = '-';
+          currentDbId = d.id; fileInfo.textContent = `Loaded: ${d.label}`;
+          // fetch tables for this DB
+          try{
+            tableContainer.textContent = 'Loading...';
+            const rr = await fetch(`/db/${d.id}/tables`);
+            if (!rr.ok) throw new Error(await rr.text());
+            const j = await rr.json(); const tlist = j.tables || [];
+            tableContainer.innerHTML = '';
+            if (tlist.length===0) tableContainer.innerHTML = '<div class="small">No tables</div>'; else {
+              for (const t of tlist) {
+                const tEl = document.createElement('div'); tEl.textContent = t.name; tEl.style.padding='4px 0'; tEl.style.cursor='pointer';
+                tEl.draggable = true;
+                tEl.addEventListener('click', ()=>{ currentDbId = d.id; fileInfo.textContent = `Loaded: ${d.label}`; loadTable(t.name, true); });
+                tEl.addEventListener('dragstart', (ev)=>{ ev.dataTransfer.setData('application/json', JSON.stringify({ dbId:d.id, tableName:t.name })); });
+                tableContainer.appendChild(tEl);
+              }
+            }
+            // load first table automatically if present
+            if (tlist.length>0) { loadTable(tlist[0].name, true); }
+          }catch(e){ tableContainer.textContent = 'Failed to load tables'; }
+        } else { tableContainer.style.display = 'none'; expandBtn.textContent = '+'; }
+      });
+      wrapper.appendChild(hdr); wrapper.appendChild(tableContainer); savedList.appendChild(wrapper);
+    }
+  }catch(e){ savedList.innerHTML = '<div class="small">Failed to load saved DBs</div>'; }
+}
+scanSaved.addEventListener('click', loadSaved);
+// initial load of saved DBs
+loadSaved().catch(()=>{});
+
+runQuery.addEventListener('click', async ()=>{
+  // use the currently loaded/selected DB (expanded DB is the default)
+  const scriptDb = currentDbId;
+  if (!scriptDb) { alert('Select or load a database first'); return; }
+  const sql = (querySql.value || '').trim(); if (!sql) { alert('Enter a SELECT query'); return; }
+  status.textContent = 'Running query...';
+  try{
+    const r = await fetch(`/db/${scriptDb}/query`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ sql, limit: parseInt(rowLimit.value||'200',10), offset: currentOffset }) });
+    if (!r.ok) throw new Error(await r.text());
+    const js = await r.json();
+    // convert columns list to objects {name,type}
+    const cols = (js.columns && js.columns.length>0) ? js.columns.map(n=>({ name:n, type:'' })) : (js.rows && js.rows.length>0 ? Object.keys(js.rows[0]).map(n=>({ name:n, type:'' })) : []);
+    renderTable(cols, js.rows || []);
+    status.textContent = `Query rows: ${js.rowCount}`;
+  }catch(e){ status.textContent = 'Query failed: ' + e.message; }
+});
+
+async function loadTables() {
+  tableList.innerHTML = '';
+  if (!currentDbId) return;
+  status.textContent = 'Loading tables...';
+  try {
+    const r = await fetch(`/db/${currentDbId}/tables`);
+    if (!r.ok) throw new Error(await r.text());
+    const js = await r.json();
+    const tables = js.tables || [];
+    if (tables.length === 0) {
+      tableList.innerHTML = '<div class="small">No tables found</div>';
+      tableCount.textContent = '0';
+      status.textContent = '';
+      return;
+    }
+    tableCount.textContent = String(tables.length);
+    for (const t of tables) {
+      const el = document.createElement('div');
+      el.className = 'table-item';
+      el.innerHTML = `<div>${t.name}</div><div class="small">${t.rowCount!==null?t.rowCount+' rows':''}</div>`;
+      el.addEventListener('click', () => loadTable(t.name, true));
+      // make table draggable to the SQL editor
+      el.draggable = true;
+      el.addEventListener('dragstart', (ev)=>{ ev.dataTransfer.setData('application/json', JSON.stringify({ dbId: currentDbId, tableName: t.name })); });
+      tableList.appendChild(el);
+    }
+    status.textContent = '';
+  } catch (e) {
+    status.textContent = 'Failed to load tables: ' + e.message;
+  }
+}
+
+function renderTable(columns, rows) {
+  grid.innerHTML = '';
+  const t = document.createElement('table');
+  t.className = 'db-table';
+  const thead = document.createElement('thead');
+  const thr = document.createElement('tr');
+  for (const c of columns) {
+    const th = document.createElement('th');
+    th.textContent = c.name;
+    th.classList.add('sortable');
+    const span = document.createElement('span'); span.className = 'sort-ind'; span.textContent = '';
+    th.appendChild(span);
+    th.addEventListener('click', () => {
+      if (currentOrderBy === c.name) currentOrderDir = currentOrderDir === 'ASC' ? 'DESC' : 'ASC';
+      else { currentOrderBy = c.name; currentOrderDir = 'ASC'; }
+      currentOffset = 0;
+      loadTable(currentTable);
+    });
+    thr.appendChild(th);
+  }
+  thead.appendChild(thr);
+  t.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    const tr = document.createElement('tr');
+    if (i % 2 === 0) tr.classList.add('even');
+    for (const c of columns) {
+      const td = document.createElement('td');
+      let v = r[c.name];
+      if (v === null || v === undefined) v = '';
+      let txt = String(v);
+      if (txt.length > 400) txt = txt.slice(0, 400) + '...';
+      td.textContent = txt;
+      td.title = String(v);
+      tr.appendChild(td);
+    }
+    tbody.appendChild(tr);
+  }
+  t.appendChild(tbody);
+  grid.appendChild(t);
+  // update results header
+  try { document.getElementById('resultsInfo').textContent = `Total rows loaded: ${rows.length}`; } catch(e){}
+  try { document.getElementById('rowsInfo').textContent = `Rows: ${rows.length}`; } catch(e){}
+
+  // update sort indicators and alignment
+  const ths = t.querySelectorAll('thead th');
+  ths.forEach((th, idx) => {
+    const name = th.firstChild && th.firstChild.nodeType === Node.TEXT_NODE ? th.firstChild.textContent : th.childNodes[0].textContent;
+    const ind = th.querySelector('.sort-ind');
+    if (!ind) return;
+    if (name === currentOrderBy) ind.textContent = currentOrderDir === 'ASC' ? '▲' : '▼'; else ind.textContent = '';
+    const col = columns.find(col => col.name === name);
+    if (col && /INT|NUM|REAL|DECIMAL|FLOAT|DOUBLE/i.test(col.type || '')) {
+      // right align numeric
+      Array.from(t.querySelectorAll('tbody tr')).forEach(tr => {
+        const cell = tr.children[idx]; if (cell) cell.style.textAlign = 'right';
+      });
+      th.style.textAlign = 'right';
+    } else {
+      th.style.textAlign = 'left';
+    }
+  });
+}
+
+async function loadTable(name, resetOffset = false) {
+  if (!currentDbId) return;
+  if (!name) return;
+  if (resetOffset) currentOffset = 0;
+  status.textContent = 'Loading table ' + name + '...';
+  const limit = Math.min(Math.max(parseInt(rowLimit.value || '200', 10), 1), 2000);
+  try {
+    const params = new URLSearchParams();
+    params.set('limit', String(limit));
+    params.set('offset', String(currentOffset));
+    if (currentOrderBy) { params.set('order_by', currentOrderBy); params.set('order_dir', currentOrderDir); }
+    const r = await fetch(`/db/${currentDbId}/table/${encodeURIComponent(name)}?` + params.toString());
+    if (!r.ok) throw new Error(await r.text());
+    const js = await r.json();
+    currentTable = name;
+    currentTotalRows = js.totalRows;
+    renderTable(js.columns, js.rows);
+    status.textContent = `Rows: ${js.rowCount} (showing ${Math.min(js.totalRows || js.rowCount, js.limitedTo)} offset ${js.offset || 0})`;
+    // highlight selected table
+    Array.from(tableList.children).forEach(el => el.classList.remove('active'));
+    const match = Array.from(tableList.children).find(el => el.textContent && el.textContent.indexOf(name) === 0);
+    if (match) match.classList.add('active');
+  } catch (e) {
+    status.textContent = 'Failed to load table: ' + e.message;
+  }
+}
+
+// pagination
+nextPage.addEventListener('click', () => {
+  if (currentTotalRows == null) return;
+  const lim = Math.min(parseInt(rowLimit.value||'200',10), 2000);
+  if (currentOffset + lim < currentTotalRows) { currentOffset += lim; loadTable(currentTable); }
+});
+prevPage.addEventListener('click', () => {
+  const lim = Math.min(parseInt(rowLimit.value||'200',10), 2000);
+  currentOffset = Math.max(0, currentOffset - lim); loadTable(currentTable);
+});
+
+// quick search (client-side simple filter)
+let searchTimeout = null;
+quickSearch.addEventListener('input', () => {
+  clearTimeout(searchTimeout);
+  searchTimeout = setTimeout(()=>{
+    const q = quickSearch.value.trim().toLowerCase();
+    Array.from(grid.querySelectorAll('tbody tr')).forEach(tr => {
+      const txt = tr.textContent.toLowerCase();
+      tr.style.display = q ? (txt.indexOf(q) === -1 ? 'none' : '') : '';
+    });
+  }, 250);
+});
+
+// export CSV/JSON
+exportCsv.addEventListener('click', ()=>{
+  const table = grid.querySelector('table'); if (!table) return; const rows = Array.from(table.querySelectorAll('thead tr, tbody tr'));
+  const csv = rows.map(r=>Array.from(r.children).map(td=>`"${String(td.textContent).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = (currentTable||'table') + '.csv'; a.click(); URL.revokeObjectURL(url);
+});
+exportJson.addEventListener('click', ()=>{
+  const table = grid.querySelector('table'); if (!table) return; const hdrs = Array.from(table.querySelectorAll('thead th')).map(h=>h.firstChild && h.firstChild.nodeType===Node.TEXT_NODE? h.firstChild.textContent : h.childNodes[0].textContent);
+  const data = Array.from(table.querySelectorAll('tbody tr')).map(tr=>{
+    const obj = {}; Array.from(tr.children).forEach((td,i)=> obj[hdrs[i]] = td.textContent); return obj;
+  });
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = (currentTable||'table') + '.json'; a.click(); URL.revokeObjectURL(url);
+});
+
+// sidebar behavior
+collapseBtn.addEventListener('click', ()=>{ sidebar.classList.toggle('collapsed'); });
+if (sidebarToggle) sidebarToggle.addEventListener('click', ()=>{ if (window.innerWidth <= 900) sidebar.classList.toggle('open'); else sidebar.classList.toggle('collapsed'); });
+let isDragging = false;
+splitter.addEventListener('mousedown', (e)=>{ isDragging = true; document.body.style.cursor='col-resize'; });
+window.addEventListener('mouseup', ()=>{ if (isDragging) { isDragging=false; document.body.style.cursor=''; } });
+window.addEventListener('mousemove', (e)=>{ if (!isDragging) return; const rect = document.body.getBoundingClientRect(); let w = e.clientX - rect.left - 18; w = Math.max(200, Math.min(800, w)); sidebar.style.width = w + 'px'; });
+
+// dark mode
+darkMode.addEventListener('change', ()=>{ document.body.classList.toggle('dark', darkMode.checked); try{ localStorage.setItem('dbbrowser:dark', darkMode.checked? '1':'0'); }catch(e){} });
+try{ if (localStorage.getItem('dbbrowser:dark') === '1') { darkMode.checked = true; document.body.classList.add('dark'); } } catch(e){}
+
+// allow dropping table names into the SQL editor
+querySql.addEventListener('dragover', (ev)=>{ ev.preventDefault(); ev.dataTransfer.dropEffect = 'copy'; });
+querySql.addEventListener('drop', (ev)=>{
+  ev.preventDefault();
+  try{
+    const raw = ev.dataTransfer.getData('application/json'); if (!raw) return;
+    const obj = JSON.parse(raw);
+    if (obj && obj.tableName) {
+  // set current DB to the dragged table's DB so Run uses it
+  if (obj.dbId) { currentDbId = obj.dbId; }
+      const start = querySql.selectionStart || 0; const end = querySql.selectionEnd || 0;
+      const before = querySql.value.slice(0,start); const after = querySql.value.slice(end);
+      // If the editor is empty (or whitespace) insert a full SELECT snippet; otherwise insert only the table name
+      if ((querySql.value || '').trim() === ''){
+        const snippet = `SELECT * FROM ${obj.tableName}`; // LIMIT ${Math.min(Math.max(parseInt(rowLimit.value||'200',10),1),2000)}`;
+        querySql.value = before + snippet + after;
+        querySql.focus(); const pos = before.length + snippet.length; querySql.setSelectionRange(pos,pos);
+      } else {
+        // insert only the table name at cursor (no LIMIT/semicolon)
+        querySql.value = before + obj.tableName + after;
+        querySql.focus(); const pos = before.length + obj.tableName.length; querySql.setSelectionRange(pos,pos);
+      }
+    }
+  }catch(e){ /* ignore */ }
+});
+
+// Keep the vertical buttons column height matched to the query editor height
+// removed forced button height syncing to avoid creating extra white space
+</script>
+</body>
+</html>

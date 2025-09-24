@@ -1,0 +1,18 @@
+{
+  "databases": [
+    {
+      "id": "1758718427762-ne8p3v",
+      "label": "siteprobe.db",
+      "path": "C:\\KP\\Git\\nodejs\\mynodeapp\\apps\\app3\\uploads\\1758718427762-ne8p3v.db",
+      "addedAt": "2025-09-24T12:53:47.764Z",
+      "lastOpened": "2025-09-24T12:53:47.764Z"
+    },
+    {
+      "id": "1758719300438-xlc9of",
+      "label": "webprobe.db",
+      "path": "C:\\KP\\Git\\nodejs\\mynodeapp\\apps\\app3\\uploads\\1758719300438-xlc9of.db",
+      "addedAt": "2025-09-24T13:08:20.439Z",
+      "lastOpened": "2025-09-24T13:08:20.439Z"
+    }
+  ]
+}
