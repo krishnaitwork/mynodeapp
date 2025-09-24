@@ -108,6 +108,71 @@ sudo node gateway.js
 node gateway.js
 ```
 
+### Running with PM2 (using npx)
+
+If your organization doesn't allow a global pm2 install, you can run PM2 via `npx`.
+
+PowerShell (from the `gateway` folder):
+
+```powershell
+# start the gateway using the included PM2 ecosystem file
+cd C:\KP\Git\nodejs\mynodeapp\gateway
+npx pm2 start ecosystem.config.cjs --env production --update-env
+
+npx pm2 resurrect
+
+# check status
+npx pm2 ls
+
+# view logs
+npx pm2 logs gateway  --lines 200
+
+# stop / restart
+npx pm2 stop gateway
+npx pm2 restart gateway
+
+# delete from pm2 list
+npx pm2 delete gateway
+```
+
+Make the admin WebSocket enabled under PM2
+
+If you want the admin WebSocket to come up automatically under PM2, set the env value and restart the process:
+
+```powershell
+# set the value and restart
+npx pm2 set gateway:GATEWAY_ADMIN_WS 1
+npx pm2 restart gateway
+```
+
+Persist PM2 across reboots (Windows)
+
+To make PM2 resurrect your saved process list at system boot, run the startup/install commands. Run the first command in an elevated (Administrator) PowerShell session:
+
+```powershell
+# generate startup command (copy the printed command and run it as Administrator)
+npx pm2 startup
+
+# After running the produced command as Administrator, save the current process list so pm2 will restore it on reboot
+npx pm2 save
+```
+
+Notes on reboot / shutdown behavior
+
+- If you ran the `npx pm2 startup` flow and executed the printed command as Administrator, PM2 will automatically resurrect the saved process list on boot (no manual action required).
+- If you did not (or cannot) install the startup service, after reboot you can restore the gateway by running:
+
+```powershell
+# restore last saved processes
+npx pm2 resurrect
+
+# or simply start using the ecosystem file again
+npx pm2 start ecosystem.config.cjs --env production --update-env
+```
+
+Security note: when using the admin HTTP endpoints (for starting/stopping the admin WS), supply the admin token either in the `X-Admin-Token` header or as `?token=<value>` in the request URL. The default token in the provided `ecosystem.config.cjs` is `changeme-dev-token` unless you override it via environment.
+
+
 ## ➕ Adding a New Application
 
 ### Step 1: Create Your App Directory

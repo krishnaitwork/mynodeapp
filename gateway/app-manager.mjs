@@ -99,7 +99,7 @@ export class AppManager extends EventEmitter {
       const nodeModulesPath = path.join(app.cwd || '.', 'node_modules');
       if (app.autoInstall !== false && fs.existsSync(pkgPath) && !fs.existsSync(nodeModulesPath)) {
         this.emit('app-log', { host: key, stream: 'stdout', line: '[auto-install] Running npm install (first start)...' });
-        const r = spawnSync('npm', ['install', '--no-audit', '--no-fund'], { cwd: app.cwd, shell: true, env: process.env, stdio: 'inherit' });
+        const r = spawnSync('npm', ['install', '--no-audit', '--no-fund'], { cwd: app.cwd, shell: true, env: process.env, stdio: 'inherit', windowsHide: process.platform === 'win32' });
         if (r.error) {
           this.emit('app-log', { host: key, stream: 'stderr', line: `[auto-install] failed: ${r.error.message}` });
         } else {
@@ -156,7 +156,7 @@ export class AppManager extends EventEmitter {
     const needsShellAuto = /^(npm|yarn|pnpm)(\.cmd)?$/i.test(cmd);
     const doSpawn = (useShell) => {
       this.emit('app-log', { host: key, stream: 'stdout', line: `[spawn] ${cmd} ${args.join(' ')} (shell=${useShell}) cwd=${app.cwd}` });
-      return spawn(cmd, args, { ...spawnOptsBase, shell: useShell });
+      return spawn(cmd, args, { ...spawnOptsBase, shell: useShell, windowsHide: process.platform === 'win32' });
     };
     try {
       child = doSpawn(wantShell || needsShellAuto);
@@ -185,7 +185,7 @@ export class AppManager extends EventEmitter {
           const npmCli = path.join(path.dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js');
           if (fs.existsSync(npmCli)) {
             this.emit('app-log', { host: key, stream: 'stderr', line: `[spawn-fallback] using node ${npmCli}` });
-            const retry = spawn(process.execPath, [npmCli, ...args], { cwd: app.cwd, env: spawnOptsBase.env });
+            const retry = spawn(process.execPath, [npmCli, ...args], { cwd: app.cwd, env: spawnOptsBase.env, windowsHide: process.platform === 'win32' });
             this.children.set(key, retry);
             this._wireChild(key, app, retry);
           }

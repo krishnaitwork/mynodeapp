@@ -403,45 +403,77 @@ cancelEdit.addEventListener('click',()=>resetEdit());
 
 refresh();
 
-const ws=new WebSocket((location.protocol==='https:'?'wss':'ws')+'://'+location.host+'/admin/ws?token='+encodeURIComponent(token));
-ws.onmessage=e=>{try{
-  const msg=JSON.parse(e.data);
-  
-  // Enhanced log handling with real-time formatting
-  if(msg.type==='app-log'&&selHost&&msg.host===selHost){
-    const logLine = document.createElement('div');
-    logLine.className = 'log-line fade-in';
+// Admin WebSocket control: toggle server-side WS and connect client only when running
+let adminWs = null;
+const wsToggleBtn = document.createElement('button');
+wsToggleBtn.id = 'wsToggleBtn';
+wsToggleBtn.className = 'secondary small';
+wsToggleBtn.style.marginLeft = '8px';
+wsToggleBtn.textContent = 'WS';
+document.querySelector('header').appendChild(wsToggleBtn);
 
-    // Detect log levels for real-time logs
-    const line = (msg.line || '').toLowerCase();
-    if (line.includes('error') || line.includes('err:')) {
-      logLine.classList.add('error');
-    } else if (line.includes('warn') || line.includes('warning')) {
-      logLine.classList.add('warn');
-    }
-
-    const timestamp = new Date(msg.ts).toLocaleTimeString();
-    logLine.innerHTML = `<span class="log-timestamp">[${timestamp}]</span> <span class="log-stream">${msg.stream}</span> <span class="log-content">${msg.line}</span>`;
-    // Insert new log at the top so newest logs are first
-    logBox.insertBefore(logLine, logBox.firstChild);
-
-    // Keep view at top when following newest logs
-    if(followBtn.dataset.follow==='1') logBox.scrollTop = 0;
+function updateWsUiState(open) {
+  if (open) {
+    wsState.textContent = 'WS open'; wsState.classList.add('ok'); wsState.classList.remove('bad');
+    wsToggleBtn.textContent = 'Stop WS';
+  } else {
+    wsState.textContent = 'WS closed'; wsState.classList.add('bad'); wsState.classList.remove('ok');
+    wsToggleBtn.textContent = 'Start WS';
   }
-  
-	const card=appsWrap.querySelector(`.app-card[data-host="${msg.host}"]`);
-	switch(msg.type){
-		case 'app-health': if(card){const dot=card.querySelector('[data-role="dot"]');const code=card.querySelector('[data-role="code"]');dot.className='health-dot anim '+(msg.healthy?'ok':(msg.healthy===false?'bad':''));dot.title=(msg.healthy?'healthy':'unhealthy')+' '+(msg.statusCode||'');code.textContent=msg.statusCode?`⚕ ${msg.statusCode}`:'';} break;
-		case 'app-start': if(card){card.classList.add('running');card.dataset.startedAt=Date.now();const badge=card.querySelector('[data-run]');if(badge){badge.textContent='RUN';badge.className='badge run';badge.dataset.run='1';}const toggleBtn=card.querySelector('[data-act="runToggle"]');if(toggleBtn){toggleBtn.textContent='Stop';toggleBtn.setAttribute('data-run-toggle','1');}} break;
-		case 'app-exit': if(card){card.classList.remove('running');const badge=card.querySelector('[data-run]');if(badge){badge.textContent='STOP';badge.className='badge stop';badge.dataset.run='0';}const up=card.querySelector('[data-role="uptime"]');if(up)up.textContent='⏱️ 0s';const toggleBtn=card.querySelector('[data-act="runToggle"]');if(toggleBtn){toggleBtn.textContent='Start';toggleBtn.setAttribute('data-run-toggle','0');}} break;
-		case 'app-added': case 'app-updated': refresh(); break; // structural
-		case 'app-removed': if(card) card.remove(); break;
-	}
-	statusLine.textContent=msg.type; 
-}catch{}};
+}
 
-ws.onopen=()=>{wsState.textContent='WS open';wsState.classList.add('ok');wsState.classList.remove('bad');};
-ws.onclose=()=>{wsState.textContent='WS closed';wsState.classList.add('bad');wsState.classList.remove('ok');};
+async function connectAdminWs() {
+  try { if (adminWs) { adminWs.close(); adminWs = null; } } catch(_){}
+  const url = (location.protocol==='https:'?'wss':'ws')+'://'+location.host+'/admin/ws?token='+encodeURIComponent(token);
+  try { adminWs = new WebSocket(url); } catch (e) { updateWsUiState(false); return; }
+  adminWs.onmessage = (e) => {
+    try {
+      const msg = JSON.parse(e.data);
+      if(msg.type==='app-log'&&selHost&&msg.host===selHost){
+        const logLine = document.createElement('div');
+        logLine.className = 'log-line fade-in';
+        const line = (msg.line || '').toLowerCase();
+        if (line.includes('error') || line.includes('err:')) logLine.classList.add('error');
+        else if (line.includes('warn') || line.includes('warning')) logLine.classList.add('warn');
+        const timestamp = new Date(msg.ts).toLocaleTimeString();
+        logLine.innerHTML = `<span class="log-timestamp">[${timestamp}]</span> <span class="log-stream">${msg.stream}</span> <span class="log-content">${msg.line}</span>`;
+        logBox.insertBefore(logLine, logBox.firstChild);
+        if(followBtn.dataset.follow==='1') logBox.scrollTop = 0;
+      }
+      const card = appsWrap.querySelector(`.app-card[data-host="${msg.host}"]`);
+      switch(msg.type){
+        case 'app-health': if(card){const dot=card.querySelector('[data-role="dot"]');const code=card.querySelector('[data-role="code"]');dot.className='health-dot anim '+(msg.healthy?'ok':(msg.healthy===false?'bad':''));dot.title=(msg.healthy?'healthy':'unhealthy')+' '+(msg.statusCode||'');code.textContent=msg.statusCode?`⚕ ${msg.statusCode}`:'';} break;
+        case 'app-start': if(card){card.classList.add('running');card.dataset.startedAt=Date.now();const badge=card.querySelector('[data-run]');if(badge){badge.textContent='RUN';badge.className='badge run';badge.dataset.run='1';}const toggleBtn=card.querySelector('[data-act="runToggle"]');if(toggleBtn){toggleBtn.textContent='Stop';toggleBtn.setAttribute('data-run-toggle','1');}} break;
+        case 'app-exit': if(card){card.classList.remove('running');const badge=card.querySelector('[data-run]');if(badge){badge.textContent='STOP';badge.className='badge stop';badge.dataset.run='0';}const up=card.querySelector('[data-role="uptime"]');if(up)up.textContent='⏱️ 0s';const toggleBtn=card.querySelector('[data-act="runToggle"]');if(toggleBtn){toggleBtn.textContent='Start';toggleBtn.setAttribute('data-run-toggle','0');}} break;
+        case 'app-added': case 'app-updated': refresh(); break;
+        case 'app-removed': if(card) card.remove(); break;
+      }
+      statusLine.textContent = msg.type;
+    } catch(_){}
+  };
+  adminWs.onopen = () => updateWsUiState(true);
+  adminWs.onclose = () => updateWsUiState(false);
+}
+
+async function startAdminWs() {
+  try { await api('/admin/ws/start','POST'); await connectAdminWs(); } catch (e) { statusLine.textContent = 'Start WS failed: '+e.message; }
+}
+
+async function stopAdminWs() {
+  try { await api('/admin/ws/stop','POST'); try { if (adminWs) adminWs.close(); } catch(_){} updateWsUiState(false); } catch (e) { statusLine.textContent = 'Stop WS failed: '+e.message; }
+}
+
+wsToggleBtn.addEventListener('click', async () => {
+  try {
+    const s = await api('/admin/ws/status');
+    if (s && s.running) await stopAdminWs(); else await startAdminWs();
+  } catch (e) { statusLine.textContent = 'WS toggle failed: '+e.message; }
+});
+
+// Query server WS status and connect only if running
+(async function initWs(){
+  try { const s = await api('/admin/ws/status'); if (s && s.running) await connectAdminWs(); else updateWsUiState(false); } catch (e) { updateWsUiState(false); }
+})();
 filterBox.addEventListener('input',()=>render(lastApps));
 refreshBtn.addEventListener('click',()=>refresh());
 logSelect.addEventListener('change',e=>loadLogs(e.target.value));

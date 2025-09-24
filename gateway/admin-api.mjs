@@ -153,6 +153,15 @@ export function installAdminApi(server, { manager, token, certInstaller, adminWs
     } catch (e) { json(res, 500, { error: e.message }); }
   });
 
+  // Return admin WebSocket running state
+  add('GET', /^\/admin\/ws\/status$/i, (req, res) => {
+    try {
+      if (!auth(req, res)) return;
+      const running = (typeof adminWs === 'object' && adminWs && typeof adminWs.running === 'function') ? adminWs.running() : false;
+      json(res, 200, { running });
+    } catch (e) { json(res, 500, { error: e.message }); }
+  });
+
   // Trigger certificate installation/generation for a single host (sync to ensureCert in gateway)
   add('POST', /^\/admin\/apps\/([^/]+)\/install-cert$/i, async (req, res, m) => {
     try {
@@ -220,7 +229,7 @@ export function installAdminApi(server, { manager, token, certInstaller, adminWs
           const { spawn } = await import('node:child_process');
           // First, list store to find matching thumbprints for subjects that match host or SANs and delete them
           // Use certutil -user -store Root to list and then remove matching entries
-          const list = spawn('certutil.exe', ['-user', '-store', 'Root'], { stdio: ['ignore', 'pipe', 'pipe'] });
+          const list = spawn('certutil.exe', ['-user', '-store', 'Root'], { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: process.platform === 'win32' });
           let out = '';
           for await (const chunk of list.stdout) out += chunk.toString('utf8');
           for await (const chunk of list.stderr) out += chunk.toString('utf8');
@@ -274,7 +283,7 @@ export function installAdminApi(server, { manager, token, certInstaller, adminWs
           // in the summary listing). This avoids missing wildcard SANs.
           const fillEntrySans = async (thumb) => {
             try {
-              const p = spawn('certutil.exe', ['-user', '-store', 'Root', thumb], { stdio: ['ignore', 'pipe', 'pipe'] });
+              const p = spawn('certutil.exe', ['-user', '-store', 'Root', thumb], { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: process.platform === 'win32' });
               let out = '';
               for await (const c of p.stdout) out += c.toString('utf8');
               for await (const c of p.stderr) out += c.toString('utf8');
@@ -294,7 +303,7 @@ export function installAdminApi(server, { manager, token, certInstaller, adminWs
           // If certutil summary omitted Subject or SANs, fetch full details for the thumb
           const fillEntryDetails = async (thumb) => {
             try {
-              const p = spawn('certutil.exe', ['-user', '-store', 'Root', thumb], { stdio: ['ignore', 'pipe', 'pipe'] });
+              const p = spawn('certutil.exe', ['-user', '-store', 'Root', thumb], { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: process.platform === 'win32' });
               let out = '';
               for await (const c of p.stdout) out += c.toString('utf8');
               for await (const c of p.stderr) out += c.toString('utf8');
@@ -605,7 +614,7 @@ export function installAdminApi(server, { manager, token, certInstaller, adminWs
           if (!combinedEntry) {
             await new Promise((resolve, reject) => {
               const args = ['-user', '-addstore', 'Root', result.certPath];
-              const p = spawn('certutil.exe', args, { stdio: 'inherit' });
+              const p = spawn('certutil.exe', args, { stdio: 'inherit', windowsHide: process.platform === 'win32' });
               p.on('exit', (code) => code === 0 ? resolve() : reject(new Error('certutil exit code '+code)));
               p.on('error', (err) => reject(err));
             });
@@ -692,7 +701,7 @@ export function installAdminApi(server, { manager, token, certInstaller, adminWs
                 for (const s of subsumed) {
                   try {
                     await new Promise((resolve, reject) => {
-                      const p = spawn('certutil.exe', ['-user', '-delstore', 'Root', s.thumb], { stdio: 'inherit' });
+                      const p = spawn('certutil.exe', ['-user', '-delstore', 'Root', s.thumb], { stdio: 'inherit', windowsHide: process.platform === 'win32' });
                       p.on('exit', c => c === 0 ? resolve() : reject(new Error('delstore exit '+c)));
                       p.on('error', err => reject(err));
                     });
@@ -756,7 +765,7 @@ export function installAdminApi(server, { manager, token, certInstaller, adminWs
             try {
               // Try user store
               await new Promise((resolve, reject) => {
-                const p = spawn('certutil.exe', ['-user', '-delstore', 'Root', t], { stdio: 'inherit' });
+                const p = spawn('certutil.exe', ['-user', '-delstore', 'Root', t], { stdio: 'inherit', windowsHide: process.platform === 'win32' });
                 p.on('exit', c => c === 0 ? resolve() : reject(new Error('delstore exit '+c)));
                 p.on('error', err => reject(err));
               });
@@ -770,7 +779,7 @@ export function installAdminApi(server, { manager, token, certInstaller, adminWs
           // Now add new cert (always attempt import even if we didn't delete anything)
           await new Promise((resolve, reject) => {
             const args = ['-user', '-addstore', 'Root', result.certPath];
-            const p = spawn('certutil.exe', args, { stdio: 'inherit' });
+            const p = spawn('certutil.exe', args, { stdio: 'inherit', windowsHide: process.platform === 'win32' });
             p.on('exit', (code) => code === 0 ? resolve() : reject(new Error('certutil exit code '+code)));
             p.on('error', (err) => reject(err));
           });

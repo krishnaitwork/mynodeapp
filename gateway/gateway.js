@@ -619,7 +619,18 @@ function startServers() {
   httpsSrv.listen(HTTPS_PORT, () => console.log(`HTTPS server listening on :${HTTPS_PORT}`));
   // Install admin API/WS AFTER servers are created so they can hook events
   // Install admin WebSocket and capture controller so API can toggle it at runtime
-  const adminWs = installAdminWs(httpSrv, { manager, token: adminToken });
+  // Honor GATEWAY_ADMIN_WS env var: set to '0' to keep WS disabled at startup
+  let adminWs = null;
+  try {
+    if (String(process.env.GATEWAY_ADMIN_WS || '1') !== '0') {
+      adminWs = installAdminWs(httpSrv, { manager, token: adminToken });
+    } else {
+      // Create a stub with start/stop no-ops so API endpoints work uniformly
+      adminWs = { start: () => { adminWs = installAdminWs(httpSrv, { manager, token: adminToken }); return adminWs; }, stop: async () => { return false; }, running: () => false };
+    }
+  } catch (e) {
+    console.error('Failed to initialize admin WS:', e);
+  }
   const api = installAdminApi(httpSrv, { manager, token: adminToken, certInstaller: ensureCert, adminWs });
   adminHandler = api.handle;
 }
