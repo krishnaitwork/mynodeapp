@@ -3,113 +3,272 @@
 <head>
   <meta charset="utf-8">
   <title>DB Browser</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
   <style>
     :root{
-      --sidebar-width:280px;
+      --sidebar-width: 260px;
       --gap:16px;
-      --muted:#6b7280;
-      --row-alt:#fbfbfb;
-      --border:#e5e7eb;
+      --muted:#64748b;
+      --row-alt:#f8fafc;
+      --border:#e2e8f0;
       --header-bg:#ffffff;
-      --font-sans: Inter, Roboto, Arial, Helvetica, sans-serif;
-      --dark-bg: #0b1220;
-      --dark-panel: #0f1724;
-      --dark-text: #e6eef8;
-    }
-    html,body{height:100%;}
-  body { font-family: var(--font-sans); margin: 0; padding: 12px; color:#111827; background:#fafafa; display:flex; flex-direction:column; }
-    header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
-    h2{margin:0;font-size:1.25rem}
-  .container{display:flex;gap:var(--gap);align-items:flex-start;flex:1;min-height:0}
-  .sidebar{width:var(--sidebar-width);min-width:160px;background:#fff;border:1px solid var(--border);border-radius:6px;padding:8px;box-shadow:0 1px 2px rgba(16,24,40,0.03);overflow:auto;position:sticky;top:12px;max-height:calc(100vh - 48px)}
-  .main{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0}
-    .controls{display:flex;gap:8px;align-items:center}
-    .controls input[type=file]{display:inline-block}
-    .file-info{margin-top:8px;font-size:0.9em;color:var(--muted)}
-    .table-list{margin-top:8px}
-    .table-item{padding:8px 10px;cursor:pointer;border-radius:4px;border-bottom:1px solid var(--border);font-size:0.95rem}
-    .table-item:hover{background:#f8fafc}
-    .table-item.active{background:#eef2ff}
-  .toolbar{display:flex;align-items:flex-start;gap:12px;margin-bottom:8px;flex-wrap:nowrap}
-    .small{font-size:0.9em;color:var(--muted)}
-    .toolbar .left, .toolbar .right{display:flex;align-items:center;gap:8px}
-    .toolbar button{padding:6px 8px;border-radius:6px}
-    .toolbar button:active{transform:translateY(1px)}
-    .sidebar .small strong{display:block;margin-bottom:6px}
-  .toolbar .query-col{flex:1;min-width:280px}
-  .toolbar .query-col textarea{width:100%;height:160px;padding:8px;border-radius:6px;border:1px solid var(--border);resize:vertical}
-  .toolbar .controls-col{width:260px;display:flex;flex-direction:column;gap:10px;align-items:flex-start}
-  /* compact, text-style buttons that will stretch to match editor height */
-  .buttons-vertical{display:flex;flex-direction:column;gap:8px;width:100%;align-items:stretch}
-  .buttons-vertical button{height:36px;padding:6px 8px;background:transparent;border:1px solid rgba(0,0,0,0.08);border-radius:6px;font-size:0.9rem;color:var(--muted);text-align:center}
-  .buttons-vertical button:hover{background:rgba(0,0,0,0.02);color:#111}
-  .buttons-vertical button:active{transform:translateY(1px)}
-  .text-small{background:transparent;border:0;color:#111;font-size:0.9rem;padding:4px 6px}
-
-    /* Table area */
-  /* Table region: results header stays above the scrollable table-inner */
-  .table-wrap{background:#fff;border:1px solid var(--border);border-radius:6px;flex:1;box-shadow:0 1px 2px rgba(16,24,40,0.03);display:flex;flex-direction:column;min-height:0}
-  .table-inner{flex:1;min-width:100%;overflow:auto}
-  table{border-collapse:collapse;width:100%;min-width:900px;table-layout:fixed;font-size:0.95rem}
-    thead th{position:sticky;top:0;background:var(--header-bg);z-index:3;padding:10px 12px;border-bottom:1px solid var(--border);text-align:left}
-    tbody td{padding:10px 12px;border-bottom:1px solid var(--border);vertical-align:top;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    tbody tr:nth-child(even){background:var(--row-alt)}
-    tbody tr:hover{background:#fff8e6}
-    th:first-child, td:first-child{width:160px}
-
-    /* make header visually separate when scrolling */
-    thead th::after{content:'';display:block;height:4px;background:linear-gradient(180deg, rgba(0,0,0,0.03), transparent);position:relative;top:8px}
-
-    /* Responsive: collapse sidebar below 900px */
-    @media (max-width: 1100px){
-      .container{flex-direction:column}
-      .sidebar{width:100%;height:auto;max-height:260px;position:relative}
-      .main{min-height:0}
-      thead th, tbody td{padding:8px}
-      table{min-width:700px}
-      .toolbar{flex-wrap:wrap}
+      --font-sans: 'Inter', Roboto, Arial, Helvetica, sans-serif;
+      --primary:#3b82f6;
+      --primary-hover:#2563eb;
+      --primary-light:#dbeafe;
+      --success:#10b981;
+      --warning:#f59e0b;
+      --error:#ef4444;
+      --background:#f8fafc;
+      --surface:#ffffff;
+      --surface-hover:#f1f5f9;
+      --text:#1e293b;
+      --text-muted:#64748b;
+      --shadow:0 1px 3px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.06);
+      --shadow-lg:0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05);
+      --radius:8px;
+      --radius-sm:4px;
     }
 
-    /* Mobile friendly: allow horizontal scroll */
-    @media (max-width: 600px){
-      thead th, tbody td{white-space:normal;font-size:0.9rem}
-      .table-wrap{overflow:auto}
-      .toolbar{gap:8px;flex-wrap:wrap}
-      .toolbar .query-col, .toolbar .controls-col{width:100%}
-      .toolbar .controls-col{align-items:stretch}
-      .buttons-vertical button{width:100%}
+    [data-theme="dark"] {
+      --muted:#94a3b8;
+      --row-alt:#1e293b;
+      --border:#334155;
+      --header-bg:#0f172a;
+      --background:#0f172a;
+      --surface:#1e293b;
+      --surface-hover:#334155;
+      --text:#f1f5f9;
+      --text-muted:#94a3b8;
+      --shadow:0 1px 3px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.2);
+      --shadow-lg:0 10px 15px -3px rgba(0,0,0,0.3), 0 4px 6px -2px rgba(0,0,0,0.2);
     }
-    @media (pointer:coarse){
-      /* touch devices: make buttons easier to tap */
-      .toolbar button{padding:10px 12px}
-      .table-item{padding:12px 14px}
+    html,body{height:100%;margin:0;padding:0}
+    body {
+      font-family: var(--font-sans);
+      color: var(--text);
+      background: var(--background);
+      display:flex;
+      flex-direction:column;
+      height:100vh;
+      gap:12px;
+      padding:12px;
+      box-sizing:border-box;
+      line-height:1.5;
     }
-    /* results header */
-    .results-header{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-bottom:1px solid var(--border);background:linear-gradient(180deg,#fff,#fafafa)}
-    .saved-db-header{font-weight:600;margin-bottom:6px}
-    .saved-db-path{font-size:0.8rem;color:var(--muted)}
+
+    /* top-level container: sidebar + main */
+    .container{
+      display:flex;
+      gap:var(--gap);
+      /* stretch children so sidebar and main share the same height and sidebar expansion doesn't overlap main */
+      align-items:stretch;
+      flex:1;
+      min-height:0;            /* critical for flex children to be scrollable */
+      overflow:hidden;
+    }
+
+    /* SIDEBAR */
+    .sidebar{
+      width:var(--sidebar-width);
+      min-width:160px;
+      background: var(--surface);
+      border:1px solid var(--border);
+      border-radius: var(--radius);
+      padding:16px;
+      box-shadow: var(--shadow);
+      overflow:auto;
+      position:relative;
+      max-height:calc(100vh - 48px);
+      transition: width .18s ease, transform .18s ease, opacity .18s ease;
+      box-sizing:border-box;
+    }
+    .sidebar.collapsed{
+      width:0 !important;
+      min-width:0;
+      padding:0;
+      border:0;
+      transform:translateX(-8px);
+      /* allow the collapse button to sit slightly outside the collapsed sidebar */
+      overflow: visible;
+    }
+    .sidebar .file-info{ font-size:0.95rem; color:var(--muted); margin-bottom:8px; padding-left:2px }
+
+    .saved-db-header{ font-weight:600; margin-bottom:6px; display:flex; justify-content:space-between; align-items:center }
+  .saved-entry { display:flex; flex-direction:column; }
+  /* expanded table container uses the sidebar's scroll; avoid nested scrolling */
+  .saved-entry .hdr-row { display:flex; justify-content:space-between; align-items:center }
+  .saved-entry .hdr-left { flex:1; overflow:hidden }
+  .saved-entry .hdr-left strong { display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+  .saved-entry .hdr-left .small { font-size:0.82rem; color:var(--muted); margin-top:2px }
+  .saved-entry .hdr-actions { display:flex; gap:6px; align-items:center }
+  .saved-entry .btn-compact { width:28px; height:28px; padding:0; border-radius:4px; font-size:14px; display:inline-flex; align-items:center; justify-content:center; border:1px solid rgba(0,0,0,0.06); background:transparent; cursor:pointer }
+  .saved-entry .btn-compact:hover{ background:rgba(0,0,0,0.02) }
+  .saved-active { background:linear-gradient(90deg,#f8fafc,#ffffff); border-left:3px solid #6366f1; padding-left:8px }
+    .table-list{ margin-top:8px; padding-bottom:36px } /* leave room for collapse button */
+    .table-item{ padding:12px 14px; cursor:pointer; border-radius: var(--radius-sm); border-bottom:1px solid var(--border); font-size:0.95rem; display:flex; justify-content:space-between; align-items:center; transition: background-color 0.15s ease; }
+    .table-item:hover{ background: var(--surface-hover); }
+    .table-item.active{ background: var(--primary-light); border-left:3px solid var(--primary); }
+
+    /* SPLITTER */
+    .splitter{ width:8px; cursor:col-resize; background:transparent; border-radius:4px; flex:0 0 8px; align-self:stretch }
+    .splitter:hover{ background:rgba(0,0,0,0.02) }
+
+    /* MAIN area */
+    .main{ flex:1; display:flex; flex-direction:column; min-width:0; min-height:0; overflow:hidden; }
+
+    /* toolbar (query + controls) */
+    .toolbar{ display:flex; gap:12px; flex-wrap:nowrap; align-items:flex-start; padding-bottom:8px; flex:0 0 auto }
+    .toolbar .query-col{ flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:8px; }
+    .toolbar .query-col textarea{
+      width:100%;
+      height:120px;
+      min-height:80px;
+      max-height:44vh;
+      padding:12px;
+      border-radius: var(--radius);
+      border:1px solid var(--border);
+      resize:vertical;
+      font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+      box-sizing:border-box;
+      background: var(--surface);
+      color: var(--text);
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+    .toolbar .query-col textarea:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    }
+
+  /* keep the controls-column compact and prevent it from shrinking or wrapping under the query editor */
+  .toolbar .controls-col{ width:240px; flex:0 0 240px; display:flex; flex-direction:column; gap:8px; align-items:stretch; box-sizing:border-box; align-self:flex-start }
+    .controls-row{ display:flex; justify-content:space-between; gap:8px; align-items:center; flex-wrap: wrap; }
+    .controls-row label{ font-size:0.9rem; color:var(--muted); display:flex; align-items:center }
+    .controls-row input[type="number"]{ width:84px; margin-left:8px; padding:8px 10px; border-radius: var(--radius-sm); border:1px solid var(--border); background: var(--surface); color: var(--text); transition: border-color 0.15s ease; }
+    .controls-row input[type="number"]:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1); }
+
+  .buttons-vertical{ display:grid; grid-template-columns: 1fr 1fr; gap:8px; width:100%; align-items:stretch }
+  .buttons-vertical button#runQuery:before { content: "▶"; margin-right: 6px; }
+  .buttons-vertical button#prevPage:before { content: "⬅"; margin-right: 6px; }
+  .buttons-vertical button#nextPage:before { content: "➡"; margin-right: 6px; }
+    .text-small{ background: var(--surface); border:1px solid var(--border); color: var(--text); font-size:0.85rem; padding:6px 10px; text-align:center; cursor:pointer; border-radius: var(--radius-sm); transition: all 0.15s ease; min-width: 60px; display: inline-block; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+    .text-small:hover{ background: var(--surface-hover); border-color: var(--primary); color: var(--primary); }
+
+    /* results header (above the scroller) */
+  .results-header{ display:flex; align-items:center; justify-content:space-between; padding:8px 12px; border-bottom:1px solid var(--border); background: linear-gradient(135deg, var(--surface) 0%, var(--surface-hover) 100%); flex:0 0 auto }
+
+    /* TABLE WRAP fills remaining space */
+  .table-wrap{ background: var(--surface); border:1px solid var(--border); border-radius: var(--radius); flex:1 1 auto; box-shadow: var(--shadow); display:flex; flex-direction:column; min-height:0; overflow:hidden }
+  /* Make the results area fill the remaining viewport and remove extra inner padding so sticky headers align correctly. */
+  .table-inner{ flex:1 1 auto; min-width:0; overflow:auto; padding:0; box-sizing:border-box; }
+
+  table{ border-collapse:collapse; width:100%; table-layout:fixed; font-size:0.95rem; min-width:0; margin:0; background:transparent }
+  /* Fix header height so sticky positions can be calculated reliably */
+  thead th{ position:sticky; top:0; height:40px; line-height:1.2; background: linear-gradient(135deg, var(--surface) 0%, var(--surface-hover) 100%); z-index:3; padding:6px 12px; border-bottom:2px solid var(--border); text-align:left; box-sizing:border-box; font-weight:600; color: var(--text); cursor: pointer; user-select: none; }
+  /* filter row sits below thead; top should equal thead height (approx 40px) so it doesn't overlap during scroll */
+  .filter-row th{ position:sticky; top:40px; background: var(--surface); z-index:2; padding:6px 12px; border-bottom:1px solid var(--border); text-align:left; box-sizing:border-box; }
+    .filter-input{ width:100%; padding:4px 6px; border:1px solid var(--border); border-radius:4px; background: var(--surface); color: var(--text); font-size:0.85rem; box-sizing:border-box; }
+    tbody td{ padding:8px 12px; border-bottom:1px solid var(--border); vertical-align:top; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:0; color: var(--text); } /* max-width:0 so ellipsis works under table-layout:fixed */
+    tbody tr{ animation: fadeInRow 0.3s ease-out forwards; opacity: 0; }
+    @keyframes fadeInRow {
+      to { opacity: 1; }
+    }
+    th:first-child, td:first-child{ width:160px; min-width:120px }
+
+    /* make truncated cells reveal full text on hover using tooltip-like behaviour */
+    tbody td[title]{ cursor:default }
+
+    /* responsive behavior */
+    @media (max-width:1100px){
+      .container{ flex-direction:column; gap:12px }
+      .sidebar{ width:100%; max-height:260px; position:relative }
+      .splitter{ display:none }
+      /* allow wrapping on smaller screens so controls can stack */
+      .toolbar{ gap:8px; flex-wrap:wrap }
+      .toolbar .controls-col{ width:100%; flex-basis:auto; }
+      .toolbar .query-col{ min-width:0 }
+      table{ font-size:0.92rem }
+      thead th, tbody td{ padding:8px }
+    }
+
+    /* compact/mobile */
+    @media (max-width:600px){
+      .toolbar .query-col textarea{ height:120px; max-height:36vh }
+      tbody td{ white-space:normal } /* allow wrapping on small screens */
+      table{ table-layout:auto }
+      .controls-row{ flex-direction:column; align-items:stretch; gap:8px }
+      .buttons-vertical button{ width:100% }
+      .toolbar .controls-col{ width:100%; flex:1 1 auto; max-width:240px; }
+      .text-small{ font-size:0.8rem; padding:4px 8px; min-width: 50px; }
+    }
+
+    /* collapse button floating */
+    #collapseBtn{
+      position:absolute; right:12px; top:12px; z-index:10;
+      background: var(--surface); border:1px solid var(--border); border-radius: var(--radius-sm); padding:6px 8px; cursor:pointer; color: var(--text); transition: all 0.15s ease;
+      pointer-events: auto;
+    }
+    #collapseBtn:hover { background: var(--surface-hover); border-color: var(--primary); }
+    /* When sidebar is collapsed keep collapse button visible slightly outside */
+  .sidebar.collapsed #collapseBtn{ right:-36px; pointer-events: auto; opacity:1 }
+
+    /* small polish */
+    .small{ font-size:0.9rem; color:var(--muted) }
+    .muted{ color:var(--muted) }
+
+    /* Toast notifications */
+    .toast-container {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 1000;
+      pointer-events: none;
+    }
+    .toast {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 12px 16px;
+      margin-bottom: 8px;
+      box-shadow: var(--shadow-lg);
+      color: var(--text);
+      font-size: 0.9rem;
+      max-width: 300px;
+      pointer-events: auto;
+      transform: translateX(400px);
+      opacity: 0;
+      transition: all 0.3s ease;
+      cursor: pointer;
+    }
+    .toast.show {
+      transform: translateX(0);
+      opacity: 1;
+    }
+    .toast.error { border-color: var(--error); background: linear-gradient(135deg, var(--surface) 0%, rgba(239, 68, 68, 0.1) 100%); }
+    .toast.success { border-color: var(--success); background: linear-gradient(135deg, var(--surface) 0%, rgba(16, 185, 129, 0.1) 100%); }
+    .toast.warning { border-color: var(--warning); background: linear-gradient(135deg, var(--surface) 0%, rgba(245, 158, 11, 0.1) 100%); }
   </style>
 </head>
 <body>
-  <!-- header removed per user request; controls moved into toolbar -->
-
-  <div class="container">
+  <div class="container" id="appContainer">
     <aside class="sidebar" id="sidebar">
       <div class="file-info" id="fileInfo">No database loaded</div>
-      <div style="margin-top:8px;border-top:1px dashed var(--border);padding-top:8px">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-          <div class="small">Saved DBs</div>
-          <button id="scanSaved">Refresh</button>
+
+  <div id="savedSection" style="border-top:1px dashed var(--border);padding-top:8px">
+        <div class="saved-db-header">
+          <div class="small">DBs</div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <button id="scanSaved" class="text-small">Refresh</button>
+            <button id="addDbBtn" class="text-small">➕ Add</button>
+          </div>
         </div>
         <div id="savedList" class="small"></div>
       </div>
-      <div style="display:flex;justify-content:space-between;align-items:center">
-        <div class="small">Tables</div>
-        <div class="small" id="tableCount"></div>
-      </div>
-      <div class="table-list" id="tableList"></div>
-      <div style="position:absolute;right:6px;top:6px"><button id="collapseBtn" title="Collapse sidebar">◀</button></div>
+
+      <button id="collapseBtn" title="Collapse sidebar">◀</button>
     </aside>
+
     <div class="splitter" id="splitter" title="Drag to resize"></div>
 
     <main class="main">
@@ -117,369 +276,600 @@
         <div class="query-col">
           <textarea id="querySql" rows="6" placeholder="SELECT * FROM my_table WHERE ..."></textarea>
         </div>
+
         <div class="controls-col">
-          <!-- <label style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="darkMode"/> <strong>Dark</strong></label> -->
-          <div style="display:flex;flex-direction:column;gap:6px;min-width:0">
-            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
-              <label class="small" style="white-space:nowrap">Limit rows: <input id="rowLimit" type="number" value="200" min="1" max="2000" style="width:80px;margin-left:6px"/></label>
-              <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
-                <button id="exportJson" class="text-small">Export Json</button>
-                <button id="exportCsv" class="text-small">Export CSV</button>
-              </div>
-            </div>
-            <input id="quickSearch" placeholder="Search rows..." style="min-width:160px;padding:6px;border-radius:4px;border:1px solid var(--border)" />
+          <div class="controls-row">
+            <label>Limit: <input id="rowLimit" type="number" value="200" min="1" max="2000" /></label>
+            <button id="themeToggle" class="text-small" title="Toggle dark mode">🌙</button>
           </div>
-          <div style="width:100%;display:flex;flex-direction:column;gap:8px;align-items:stretch">
-            <div class="buttons-vertical">
-              <button id="runQuery">Run</button>
-              <button id="prevPage">Prev</button>
-              <button id="nextPage">Next</button>
-            </div>
-            <!-- export buttons moved to top controls -->
+
+          <div class="buttons-vertical">
+            <button id="runQuery" title="Run query (Ctrl+Enter)">Run</button>
+            <button id="clearQuery" title="Clear query (Ctrl+L)">🗑️ Clear</button>
+            <button id="formatQuery" title="Format query (Ctrl+Shift+F)">✨ Format</button>
           </div>
-          <span id="status" class="small" style="margin-top:8px"></span>
+
+          <div id="status" class="small" style="margin-top:6px"></div>
         </div>
       </div>
-      <div class="results-header"><div id="resultsInfo">Total rows loaded: 0</div><div id="resultsControls" class="small"></div></div>
+
+      <div class="results-header">
+        <div id="resultsInfo">Total rows loaded: 0</div>
+        <div id="resultsControls" style="display:flex;gap:8px;align-items:center;">
+          <button id="prevPage" class="text-small">⬅ Prev</button>
+          <button id="nextPage" class="text-small">Next ➡</button>
+          <button id="exportJson" class="text-small">📄 JSON</button>
+          <button id="exportCsv" class="text-small">📊 CSV</button>
+        </div>
+      </div>
+
       <div class="table-wrap">
         <div class="table-inner" id="grid"></div>
       </div>
     </main>
   </div>
 
+  <div class="toast-container" id="toastContainer"></div>
+
 <script>
-// DOM refs
-const uploadBtn = document.getElementById('uploadBtn');
-const dbfile = document.getElementById('dbfile');
-const status = document.getElementById('status');
+/* ========== DOM refs ========== */
 const fileInfo = document.getElementById('fileInfo');
-const tableList = document.getElementById('tableList');
 const grid = document.getElementById('grid');
 const rowLimit = document.getElementById('rowLimit');
-const tableCount = document.getElementById('tableCount');
 const sidebar = document.getElementById('sidebar');
 const splitter = document.getElementById('splitter');
 const collapseBtn = document.getElementById('collapseBtn');
-const sidebarToggle = document.getElementById('sidebarToggle');
-const quickSearch = document.getElementById('quickSearch');
 const prevPage = document.getElementById('prevPage');
 const nextPage = document.getElementById('nextPage');
 const exportCsv = document.getElementById('exportCsv');
 const exportJson = document.getElementById('exportJson');
-const darkMode = document.getElementById('darkMode');
 const savedList = document.getElementById('savedList');
 const scanSaved = document.getElementById('scanSaved');
 const querySql = document.getElementById('querySql');
 const runQuery = document.getElementById('runQuery');
+const status = document.getElementById('status');
+const addDbBtn = document.getElementById('addDbBtn');
+const clearQuery = document.getElementById('clearQuery');
+const formatQuery = document.getElementById('formatQuery');
+const themeToggle = document.getElementById('themeToggle');
+const toastContainer = document.getElementById('toastContainer');
 
-// state
+/* ========== state ========== */
 let currentDbId = null;
 let currentTable = null;
 let currentOffset = 0;
 let currentOrderBy = null;
 let currentOrderDir = 'ASC';
 let currentTotalRows = null;
+let currentExpandedDb = null; // Track which DB is currently expanded
 
-if (uploadBtn) {
-  uploadBtn.addEventListener('click', async () => {
-    if (!dbfile.files || dbfile.files.length === 0) { alert('Select a sqlite file first'); return; }
-    const f = dbfile.files[0];
-    const fd = new FormData(); fd.append('dbfile', f);
-    status.textContent = 'Uploading...';
-    try {
-      const resp = await fetch('/db/upload', { method: 'POST', body: fd });
-      if (!resp.ok) throw new Error(await resp.text());
-      const js = await resp.json();
-      currentDbId = js.id;
-      fileInfo.textContent = `Loaded: ${js.name}`;
-      status.textContent = '';
-      currentOffset = 0; currentOrderBy = null; currentOrderDir = 'ASC';
-      await loadTables();
-      // refresh saved list
-      await loadSaved();
-    } catch (e) {
-      status.textContent = 'Upload failed: ' + e.message;
-    }
+/* ========== helper: safe fetch JSON ========== */
+async function fetchJson(url, opts){
+  const r = await fetch(url, opts);
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+/* ========== helper: detect date strings ========== */
+function isDateString(str) {
+  if (typeof str !== 'string') return false;
+  // Simple date detection - could be enhanced
+  return /^\d{4}-\d{2}-\d{2}/.test(str) || /\d{1,2}\/\d{1,2}\/\d{4}/.test(str);
+}
+
+/* ========== toast notifications ========== */
+function showToast(message, type = 'info', duration = 4000) {
+  const toast = document.createElement('div');
+  toast.className = `toast ${type}`;
+  toast.textContent = message;
+  toastContainer.appendChild(toast);
+
+  // Trigger animation
+  setTimeout(() => toast.classList.add('show'), 10);
+
+  // Auto remove
+  setTimeout(() => {
+    toast.classList.remove('show');
+    setTimeout(() => toast.remove(), 300);
+  }, duration);
+
+  // Click to dismiss
+  toast.addEventListener('click', () => {
+    toast.classList.remove('show');
+    setTimeout(() => toast.remove(), 300);
   });
 }
 
-// load saved DBs
+/* ========== saved DBs ========== */
 async function loadSaved(){
-  savedList.innerHTML = '';
+  // show loading placeholder and ensure the savedList container is visible
+  const savedSectionEl = document.getElementById('savedSection');
+  if (savedSectionEl) savedSectionEl.style.display = '';
+  savedList.innerHTML = '<div class="small muted"><span class="loading-spinner"></span>Loading…</div>';
   try{
-    const r = await fetch('/api/databases'); if (!r.ok) throw new Error(await r.text());
-    const js = await r.json(); const list = js.databases || [];
-    if (list.length === 0) { savedList.innerHTML = '<div class="small">No saved DBs</div>'; return; }
-  for (const d of list) {
-      const wrapper = document.createElement('div'); wrapper.style.borderBottom = '1px solid var(--border)'; wrapper.style.padding='6px 4px';
-      const hdr = document.createElement('div'); hdr.style.display='flex'; hdr.style.justifyContent='space-between'; hdr.style.alignItems='center';
-  const left = document.createElement('div'); left.style.flex = '1'; left.innerHTML = `<strong>${d.label}</strong>`;
-  const actions = document.createElement('div'); actions.style.display='flex'; actions.style.gap='6px'; actions.style.alignItems='center';
-  const expandBtn = document.createElement('button'); expandBtn.textContent = '+';
-  const addIcon = document.createElement('button'); addIcon.title = 'Add / Upload DB'; addIcon.innerHTML = '➕'; addIcon.style.fontSize='14px'; addIcon.addEventListener('click', ()=>{ dbfile.click(); });
-  actions.appendChild(expandBtn); actions.appendChild(addIcon);
-      hdr.appendChild(left); hdr.appendChild(actions);
-  const tableContainer = document.createElement('div'); tableContainer.style.marginTop='6px'; tableContainer.style.display='none'; tableContainer.className='small';
+    const js = await fetchJson('/api/databases');
+    const list = js.databases || [];
+    if (list.length === 0) { savedList.innerHTML = '<div class="small muted">No saved DBs</div>'; return; }
+    savedList.innerHTML = '';
+    for (const d of list){
+  const wrapper = document.createElement('div'); wrapper.className = 'saved-entry'; wrapper.style.borderBottom='1px solid var(--border)'; wrapper.style.padding='6px 4px';
+  const hdr = document.createElement('div'); hdr.className = 'hdr-row';
+  const left = document.createElement('div'); left.className = 'hdr-left'; left.innerHTML = `<strong>${d.label}</strong><div class="small muted" style="margin-top:2px">${d.addedAt? new Date(d.addedAt).toLocaleString():''}</div>`;
+  const actions = document.createElement('div'); actions.className = 'hdr-actions';
+  const expandBtn = document.createElement('button'); expandBtn.textContent = '▶'; expandBtn.title='Open tables'; expandBtn.dataset.expand = '1'; expandBtn.className = 'btn-compact';
+  actions.appendChild(expandBtn);
+  hdr.appendChild(left); hdr.appendChild(actions);
+      const tableContainer = document.createElement('div'); tableContainer.style.marginTop='6px'; tableContainer.style.display='none'; tableContainer.style.transition='all 0.3s ease'; tableContainer.className='small'; tableContainer.dataset.container = '1';
       expandBtn.addEventListener('click', async ()=>{
-        // collapse others
-        Array.from(savedList.children).forEach(child => {
-          const btn = child.querySelector('button'); const cont = child.querySelector('div.small');
-          if (btn && btn !== expandBtn) { btn.textContent = '+'; if (cont) cont.style.display = 'none'; }
-        });
+        // If there's a currently expanded DB and it's not this one, collapse it
+        if (currentExpandedDb && currentExpandedDb !== wrapper) {
+          const prevBtn = currentExpandedDb.querySelector('button[data-expand]');
+          const prevCont = currentExpandedDb.querySelector('div[data-container]');
+          if (prevBtn) prevBtn.textContent = '▶';
+          if (prevCont) prevCont.style.display = 'none';
+          currentExpandedDb.classList.remove('saved-active');
+        }
+
         if (tableContainer.style.display === 'none'){
-          // expand this one and set as default DB
+          // expand this one
           tableContainer.style.display = '';
           expandBtn.textContent = '-';
+          wrapper.classList.add('saved-active');
+          currentExpandedDb = wrapper;
           currentDbId = d.id; fileInfo.textContent = `Loaded: ${d.label}`;
-          // fetch tables for this DB
-          try{
-            tableContainer.textContent = 'Loading...';
-            const rr = await fetch(`/db/${d.id}/tables`);
-            if (!rr.ok) throw new Error(await rr.text());
-            const j = await rr.json(); const tlist = j.tables || [];
+  status.textContent = '';
+  try{
+    tableContainer.textContent = '';
+    const spinner = document.createElement('span');
+    spinner.className = 'loading-spinner';
+    tableContainer.appendChild(spinner);
+    tableContainer.appendChild(document.createTextNode(' Loading tables...'));
+    const rr = await fetchJson(`/db/${d.id}/tables`);
+    const tlist = rr.tables || [];
             tableContainer.innerHTML = '';
-            if (tlist.length===0) tableContainer.innerHTML = '<div class="small">No tables</div>'; else {
-              for (const t of tlist) {
-                const tEl = document.createElement('div'); tEl.textContent = t.name; tEl.style.padding='4px 0'; tEl.style.cursor='pointer';
-                tEl.draggable = true;
+            if (tlist.length === 0) tableContainer.innerHTML = '<div class="small muted">No tables</div>';
+            else {
+              for (const t of tlist){
+                const tEl = document.createElement('div'); tEl.className = 'table-item'; tEl.textContent = t.name; tEl.style.padding='6px 4px'; tEl.style.cursor='pointer';
                 tEl.addEventListener('click', ()=>{ currentDbId = d.id; fileInfo.textContent = `Loaded: ${d.label}`; loadTable(t.name, true); });
-                tEl.addEventListener('dragstart', (ev)=>{ ev.dataTransfer.setData('application/json', JSON.stringify({ dbId:d.id, tableName:t.name })); });
+                // drag support
+                tEl.draggable = true;
+                tEl.addEventListener('dragstart', ev => ev.dataTransfer.setData('application/json', JSON.stringify({ dbId:d.id, tableName:t.name })));
                 tableContainer.appendChild(tEl);
               }
             }
-            // load first table automatically if present
-            if (tlist.length>0) { loadTable(tlist[0].name, true); }
-          }catch(e){ tableContainer.textContent = 'Failed to load tables'; }
-        } else { tableContainer.style.display = 'none'; expandBtn.textContent = '+'; }
+            // populate the left table list to match this DB
+            // await loadTables(); // removed
+            if (tlist.length>0) loadTable(tlist[0].name, true);
+          }catch(e){ tableContainer.textContent = 'Failed to load tables'; showToast('Failed to load tables: ' + e.message, 'error'); }
+        } else {
+          // collapse this one
+          tableContainer.style.display = 'none'; expandBtn.textContent = '▶'; wrapper.classList.remove('saved-active');
+          currentExpandedDb = null;
+          if (currentDbId === d.id){ currentDbId = null; fileInfo.textContent = 'No database loaded'; }
+        }
       });
       wrapper.appendChild(hdr); wrapper.appendChild(tableContainer); savedList.appendChild(wrapper);
     }
-  }catch(e){ savedList.innerHTML = '<div class="small">Failed to load saved DBs</div>'; }
+  }catch(e){
+    // Ensure the saved list placeholder is visible so the user sees the error
+    savedList.innerHTML = `<div class="small muted">Failed to load saved DBs</div>`;
+    const savedSectionEl2 = document.getElementById('savedSection');
+    if (savedSectionEl2) savedSectionEl2.style.display = '';
+  }
 }
-scanSaved.addEventListener('click', loadSaved);
+scanSaved.addEventListener('click', ()=>loadSaved());
 // initial load of saved DBs
 loadSaved().catch(()=>{});
 
+/* ========== run query ========== */
 runQuery.addEventListener('click', async ()=>{
-  // use the currently loaded/selected DB (expanded DB is the default)
-  const scriptDb = currentDbId;
-  if (!scriptDb) { alert('Select or load a database first'); return; }
-  const sql = (querySql.value || '').trim(); if (!sql) { alert('Enter a SELECT query'); return; }
-  status.textContent = 'Running query...';
+  if (!currentDbId){ showToast('Select or load a database first', 'warning'); return; }
+  const sql = (querySql.value || '').trim(); if (!sql){ showToast('Enter a SELECT query', 'warning'); return; }
+  status.textContent = '';
+  const statusDiv = document.createElement('div');
+  statusDiv.innerHTML = '<span class="loading-spinner"></span>Running query...';
+  status.appendChild(statusDiv);
   try{
-    const r = await fetch(`/db/${scriptDb}/query`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ sql, limit: parseInt(rowLimit.value||'200',10), offset: currentOffset }) });
+    const r = await fetch(`/db/${currentDbId}/query`, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ sql, limit: parseInt(rowLimit.value||'200',10), offset: currentOffset })
+    });
     if (!r.ok) throw new Error(await r.text());
     const js = await r.json();
-    // convert columns list to objects {name,type}
     const cols = (js.columns && js.columns.length>0) ? js.columns.map(n=>({ name:n, type:'' })) : (js.rows && js.rows.length>0 ? Object.keys(js.rows[0]).map(n=>({ name:n, type:'' })) : []);
     renderTable(cols, js.rows || []);
-    status.textContent = `Query rows: ${js.rowCount}`;
-  }catch(e){ status.textContent = 'Query failed: ' + e.message; }
+    status.textContent = `Query returned ${js.rowCount}`;
+  }catch(e){ showToast('Query failed: ' + e.message, 'error'); }
 });
 
-async function loadTables() {
+/* ========== load table list for left panel ========== */
+/* function loadTables(){
   tableList.innerHTML = '';
   if (!currentDbId) return;
-  status.textContent = 'Loading tables...';
-  try {
-    const r = await fetch(`/db/${currentDbId}/tables`);
-    if (!r.ok) throw new Error(await r.text());
-    const js = await r.json();
-    const tables = js.tables || [];
-    if (tables.length === 0) {
-      tableList.innerHTML = '<div class="small">No tables found</div>';
-      tableCount.textContent = '0';
-      status.textContent = '';
-      return;
-    }
-    tableCount.textContent = String(tables.length);
-    for (const t of tables) {
+  status.textContent = '';
+  const statusDiv = document.createElement('div');
+  statusDiv.innerHTML = '<span class="loading-spinner"></span>Loading tables...';
+  status.appendChild(statusDiv);
+  try{
+    const r = await fetch(`/db/${currentDbId}/tables`); if (!r.ok) throw new Error(await r.text());
+    const js = await r.json(); const tables = js.tables || [];
+    tableCount.textContent = String(tables.length || 0);
+    if (tables.length === 0){ tableList.innerHTML = '<div class="small muted">No tables found</div>'; status.textContent=''; return; }
+    for (const t of tables){
       const el = document.createElement('div');
       el.className = 'table-item';
-      el.innerHTML = `<div>${t.name}</div><div class="small">${t.rowCount!==null?t.rowCount+' rows':''}</div>`;
-      el.addEventListener('click', () => loadTable(t.name, true));
-      // make table draggable to the SQL editor
+      el.innerHTML = `<div style="flex:1;overflow:hidden;text-overflow:ellipsis">${t.name}</div><div class="small muted" style="margin-left:8px">${t.rowCount!=null?t.rowCount+' rows':''}</div>`;
+      el.addEventListener('click', ()=>loadTable(t.name, true));
       el.draggable = true;
-      el.addEventListener('dragstart', (ev)=>{ ev.dataTransfer.setData('application/json', JSON.stringify({ dbId: currentDbId, tableName: t.name })); });
+      el.addEventListener('dragstart', ev => ev.dataTransfer.setData('application/json', JSON.stringify({ dbId: currentDbId, tableName: t.name })));
       tableList.appendChild(el);
     }
     status.textContent = '';
-  } catch (e) {
-    status.textContent = 'Failed to load tables: ' + e.message;
-  }
-}
+  }catch(e){ status.textContent = 'Failed to load tables: ' + e.message; showToast('Failed to load tables: ' + e.message, 'error'); }
+} */
 
-function renderTable(columns, rows) {
+/* ========== render table ========== */
+function renderTable(columns, rows){
   grid.innerHTML = '';
   const t = document.createElement('table');
   t.className = 'db-table';
   const thead = document.createElement('thead');
   const thr = document.createElement('tr');
-  for (const c of columns) {
-    const th = document.createElement('th');
-    th.textContent = c.name;
-    th.classList.add('sortable');
-    const span = document.createElement('span'); span.className = 'sort-ind'; span.textContent = '';
-    th.appendChild(span);
-    th.addEventListener('click', () => {
-      if (currentOrderBy === c.name) currentOrderDir = currentOrderDir === 'ASC' ? 'DESC' : 'ASC';
-      else { currentOrderBy = c.name; currentOrderDir = 'ASC'; }
-      currentOffset = 0;
-      loadTable(currentTable);
-    });
+  for (const c of columns){
+    const th = document.createElement('th'); th.textContent = c.name;
+    const ind = document.createElement('span'); ind.className='sort-ind'; ind.style.marginLeft='8px';
+    th.appendChild(ind);
+    th.addEventListener('click', ()=>{ if (currentOrderBy === c.name) currentOrderDir = currentOrderDir === 'ASC' ? 'DESC' : 'ASC'; else { currentOrderBy = c.name; currentOrderDir = 'ASC'; } currentOffset = 0; loadTable(currentTable); });
     thr.appendChild(th);
   }
   thead.appendChild(thr);
+
+  // Add filter row
+  const filterRow = document.createElement('tr');
+  filterRow.className = 'filter-row';
+  for (const c of columns){
+    const th = document.createElement('th');
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.placeholder = 'Filter ' + c.name;
+    input.className = 'filter-input';
+    input.dataset.column = c.name;
+    th.appendChild(input);
+    filterRow.appendChild(th);
+  }
+  thead.appendChild(filterRow);
+
   t.appendChild(thead);
 
   const tbody = document.createElement('tbody');
-  for (let i = 0; i < rows.length; i++) {
-    const r = rows[i];
-    const tr = document.createElement('tr');
-    if (i % 2 === 0) tr.classList.add('even');
-    for (const c of columns) {
+  for (let i=0;i<rows.length;i++){
+    const r = rows[i]; const tr = document.createElement('tr');
+    for (const c of columns){
       const td = document.createElement('td');
       let v = r[c.name];
-      if (v === null || v === undefined) v = '';
-      let txt = String(v);
-      if (txt.length > 400) txt = txt.slice(0, 400) + '...';
-      td.textContent = txt;
-      td.title = String(v);
+      if (v === null || v === undefined) {
+        v = 'NULL';
+        td.classList.add('data-null');
+      } else {
+        let txt = String(v);
+        // Detect data types
+        if (typeof v === 'number' || (!isNaN(v) && !isNaN(parseFloat(v)))) {
+          td.classList.add('data-number');
+        } else if (typeof v === 'boolean' || v === 'true' || v === 'false') {
+          td.classList.add('data-boolean');
+        } else if (isDateString(v)) {
+          td.classList.add('data-date');
+        } else {
+          td.classList.add('data-string');
+        }
+        if (txt.length > 400) txt = txt.slice(0, 400) + '...';
+      }
+      td.textContent = v;
+      td.title = String(r[c.name]);
       tr.appendChild(td);
     }
     tbody.appendChild(tr);
   }
   t.appendChild(tbody);
   grid.appendChild(t);
-  // update results header
-  try { document.getElementById('resultsInfo').textContent = `Total rows loaded: ${rows.length}`; } catch(e){}
-  try { document.getElementById('rowsInfo').textContent = `Rows: ${rows.length}`; } catch(e){}
 
-  // update sort indicators and alignment
-  const ths = t.querySelectorAll('thead th');
+  // Add filter functionality
+  const filterInputs = t.querySelectorAll('.filter-input');
+  filterInputs.forEach(input => {
+    input.addEventListener('input', () => {
+      const filters = {};
+      filterInputs.forEach(inp => {
+        const col = inp.dataset.column;
+        const val = inp.value.trim().toLowerCase();
+        if (val) filters[col] = val;
+      });
+      let visibleCount = 0;
+      Array.from(t.querySelectorAll('tbody tr')).forEach(tr => {
+        let show = true;
+        const tds = tr.querySelectorAll('td');
+        for (let i = 0; i < tds.length; i++) {
+          const colName = columns[i].name;
+          const filterVal = filters[colName];
+          if (filterVal && !tds[i].textContent.toLowerCase().includes(filterVal)) {
+            show = false;
+            break;
+          }
+        }
+        tr.style.display = show ? '' : 'none';
+        if (show) visibleCount++;
+      });
+      document.getElementById('resultsInfo').textContent = `Showing ${visibleCount} of ${rows.length} loaded rows`;
+    });
+  });
+
+  // update header info
+  document.getElementById('resultsInfo').textContent = `Total rows loaded: ${rows.length}`;
+  // update sort indicators
+  const ths = t.querySelectorAll('thead tr:first-child th');
   ths.forEach((th, idx) => {
     const name = th.firstChild && th.firstChild.nodeType === Node.TEXT_NODE ? th.firstChild.textContent : th.childNodes[0].textContent;
     const ind = th.querySelector('.sort-ind');
     if (!ind) return;
     if (name === currentOrderBy) ind.textContent = currentOrderDir === 'ASC' ? '▲' : '▼'; else ind.textContent = '';
-    const col = columns.find(col => col.name === name);
-    if (col && /INT|NUM|REAL|DECIMAL|FLOAT|DOUBLE/i.test(col.type || '')) {
-      // right align numeric
-      Array.from(t.querySelectorAll('tbody tr')).forEach(tr => {
-        const cell = tr.children[idx]; if (cell) cell.style.textAlign = 'right';
-      });
-      th.style.textAlign = 'right';
-    } else {
-      th.style.textAlign = 'left';
-    }
   });
 }
 
-async function loadTable(name, resetOffset = false) {
-  if (!currentDbId) return;
-  if (!name) return;
+/* ========== load a single table with pagination/support ========== */
+async function loadTable(name, resetOffset=false){
+  if (!currentDbId || !name) return;
   if (resetOffset) currentOffset = 0;
-  status.textContent = 'Loading table ' + name + '...';
-  const limit = Math.min(Math.max(parseInt(rowLimit.value || '200', 10), 1), 2000);
-  try {
+  status.textContent = '';
+  // const statusDiv = document.createElement('div');
+  // statusDiv.innerHTML = '<span class="loading-spinner"></span>Loading ' + name + '...';
+  // status.appendChild(statusDiv);
+  const limit = Math.min(Math.max(parseInt(rowLimit.value || '200',10),1),2000);
+  try{
     const params = new URLSearchParams();
     params.set('limit', String(limit));
     params.set('offset', String(currentOffset));
-    if (currentOrderBy) { params.set('order_by', currentOrderBy); params.set('order_dir', currentOrderDir); }
+    if (currentOrderBy){ params.set('order_by', currentOrderBy); params.set('order_dir', currentOrderDir); }
     const r = await fetch(`/db/${currentDbId}/table/${encodeURIComponent(name)}?` + params.toString());
     if (!r.ok) throw new Error(await r.text());
     const js = await r.json();
-    currentTable = name;
-    currentTotalRows = js.totalRows;
-    renderTable(js.columns, js.rows);
-    status.textContent = `Rows: ${js.rowCount} (showing ${Math.min(js.totalRows || js.rowCount, js.limitedTo)} offset ${js.offset || 0})`;
-    // highlight selected table
-    Array.from(tableList.children).forEach(el => el.classList.remove('active'));
-    const match = Array.from(tableList.children).find(el => el.textContent && el.textContent.indexOf(name) === 0);
-    if (match) match.classList.add('active');
-  } catch (e) {
-    status.textContent = 'Failed to load table: ' + e.message;
-  }
+    currentTable = name; currentTotalRows = js.totalRows;
+    renderTable(js.columns || [], js.rows || []);
+    // highlight selected table in the expanded DB container
+    if (currentExpandedDb) {
+      const container = currentExpandedDb.querySelector('div[data-container]');
+      if (container) {
+        Array.from(container.children).forEach(el => el.classList.remove('active'));
+        const match = Array.from(container.children).find(el => el.textContent === name);
+        if (match) match.classList.add('active');
+      }
+    }
+    document.getElementById('resultsInfo').textContent = `Rows: ${js.rowCount} (showing ${Math.min(js.totalRows || js.rowCount, js.limitedTo)} offset ${js.offset || 0})`;
+  }catch(e){ status.textContent = 'Failed to load table: ' + e.message; showToast('Failed to load table: ' + e.message, 'error'); }
 }
 
-// pagination
-nextPage.addEventListener('click', () => {
+/* ========== pagination ========== */
+nextPage.addEventListener('click', ()=>{
   if (currentTotalRows == null) return;
   const lim = Math.min(parseInt(rowLimit.value||'200',10), 2000);
-  if (currentOffset + lim < currentTotalRows) { currentOffset += lim; loadTable(currentTable); }
+  if (currentOffset + lim < currentTotalRows){ currentOffset += lim; loadTable(currentTable); }
 });
-prevPage.addEventListener('click', () => {
+prevPage.addEventListener('click', ()=>{
   const lim = Math.min(parseInt(rowLimit.value||'200',10), 2000);
-  currentOffset = Math.max(0, currentOffset - lim); loadTable(currentTable);
+  currentOffset = Math.max(0, currentOffset - lim);
+  loadTable(currentTable);
 });
 
-// quick search (client-side simple filter)
-let searchTimeout = null;
-quickSearch.addEventListener('input', () => {
-  clearTimeout(searchTimeout);
-  searchTimeout = setTimeout(()=>{
-    const q = quickSearch.value.trim().toLowerCase();
-    Array.from(grid.querySelectorAll('tbody tr')).forEach(tr => {
-      const txt = tr.textContent.toLowerCase();
-      tr.style.display = q ? (txt.indexOf(q) === -1 ? 'none' : '') : '';
-    });
-  }, 250);
-});
-
-// export CSV/JSON
+/* ========== export CSV/JSON ========== */
 exportCsv.addEventListener('click', ()=>{
-  const table = grid.querySelector('table'); if (!table) return; const rows = Array.from(table.querySelectorAll('thead tr, tbody tr'));
-  const csv = rows.map(r=>Array.from(r.children).map(td=>`"${String(td.textContent).replace(/"/g,'""')}"`).join(',')).join('\n');
-  const blob = new Blob([csv], { type: 'text/csv' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = (currentTable||'table') + '.csv'; a.click(); URL.revokeObjectURL(url);
+  const table = grid.querySelector('table'); if (!table) return;
+  const rows = Array.from(table.querySelectorAll('thead tr:first-child, tbody tr'));
+  const csv = rows.map(r => Array.from(r.children).map(td => `"${String(td.textContent).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = (currentTable||'table') + '.csv'; a.click(); URL.revokeObjectURL(url);
 });
 exportJson.addEventListener('click', ()=>{
-  const table = grid.querySelector('table'); if (!table) return; const hdrs = Array.from(table.querySelectorAll('thead th')).map(h=>h.firstChild && h.firstChild.nodeType===Node.TEXT_NODE? h.firstChild.textContent : h.childNodes[0].textContent);
-  const data = Array.from(table.querySelectorAll('tbody tr')).map(tr=>{
+  const table = grid.querySelector('table'); if (!table) return;
+  const hdrs = Array.from(table.querySelectorAll('thead tr:first-child th')).map(h => h.firstChild && h.firstChild.nodeType===Node.TEXT_NODE? h.firstChild.textContent : h.childNodes[0].textContent);
+  const data = Array.from(table.querySelectorAll('tbody tr')).map(tr => {
     const obj = {}; Array.from(tr.children).forEach((td,i)=> obj[hdrs[i]] = td.textContent); return obj;
   });
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = (currentTable||'table') + '.json'; a.click(); URL.revokeObjectURL(url);
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = (currentTable||'table') + '.json'; a.click(); URL.revokeObjectURL(url);
 });
 
-// sidebar behavior
-collapseBtn.addEventListener('click', ()=>{ sidebar.classList.toggle('collapsed'); });
-if (sidebarToggle) sidebarToggle.addEventListener('click', ()=>{ if (window.innerWidth <= 900) sidebar.classList.toggle('open'); else sidebar.classList.toggle('collapsed'); });
-let isDragging = false;
-splitter.addEventListener('mousedown', (e)=>{ isDragging = true; document.body.style.cursor='col-resize'; });
-window.addEventListener('mouseup', ()=>{ if (isDragging) { isDragging=false; document.body.style.cursor=''; } });
-window.addEventListener('mousemove', (e)=>{ if (!isDragging) return; const rect = document.body.getBoundingClientRect(); let w = e.clientX - rect.left - 18; w = Math.max(200, Math.min(800, w)); sidebar.style.width = w + 'px'; });
-
-// dark mode
-darkMode.addEventListener('change', ()=>{ document.body.classList.toggle('dark', darkMode.checked); try{ localStorage.setItem('dbbrowser:dark', darkMode.checked? '1':'0'); }catch(e){} });
-try{ if (localStorage.getItem('dbbrowser:dark') === '1') { darkMode.checked = true; document.body.classList.add('dark'); } } catch(e){}
-
-// allow dropping table names into the SQL editor
-querySql.addEventListener('dragover', (ev)=>{ ev.preventDefault(); ev.dataTransfer.dropEffect = 'copy'; });
-querySql.addEventListener('drop', (ev)=>{
+/* ========== drag table names into SQL editor ========== */
+querySql.addEventListener('dragover', ev => { ev.preventDefault(); ev.dataTransfer.dropEffect = 'copy'; });
+querySql.addEventListener('drop', ev => {
   ev.preventDefault();
   try{
     const raw = ev.dataTransfer.getData('application/json'); if (!raw) return;
-    const obj = JSON.parse(raw);
-    if (obj && obj.tableName) {
-  // set current DB to the dragged table's DB so Run uses it
-  if (obj.dbId) { currentDbId = obj.dbId; }
+    const obj = JSON.parse(raw); if (obj && obj.tableName){
+      if (obj.dbId) currentDbId = obj.dbId;
       const start = querySql.selectionStart || 0; const end = querySql.selectionEnd || 0;
       const before = querySql.value.slice(0,start); const after = querySql.value.slice(end);
-      // If the editor is empty (or whitespace) insert a full SELECT snippet; otherwise insert only the table name
       if ((querySql.value || '').trim() === ''){
-        const snippet = `SELECT * FROM ${obj.tableName}`; // LIMIT ${Math.min(Math.max(parseInt(rowLimit.value||'200',10),1),2000)}`;
-        querySql.value = before + snippet + after;
-        querySql.focus(); const pos = before.length + snippet.length; querySql.setSelectionRange(pos,pos);
+        const snippet = `SELECT * FROM ${obj.tableName}`;
+        querySql.value = before + snippet + after; querySql.focus(); const pos = before.length + snippet.length; querySql.setSelectionRange(pos,pos);
       } else {
-        // insert only the table name at cursor (no LIMIT/semicolon)
-        querySql.value = before + obj.tableName + after;
-        querySql.focus(); const pos = before.length + obj.tableName.length; querySql.setSelectionRange(pos,pos);
+        querySql.value = before + obj.tableName + after; querySql.focus(); const pos = before.length + obj.tableName.length; querySql.setSelectionRange(pos,pos);
       }
     }
-  }catch(e){ /* ignore */ }
+  }catch(e){}
 });
 
-// Keep the vertical buttons column height matched to the query editor height
-// removed forced button height syncing to avoid creating extra white space
+/* ========== splitter drag (pointer events, works on touch) ========== */
+let isDragging = false;
+splitter.addEventListener('pointerdown', e => { isDragging = true; splitter.setPointerCapture(e.pointerId); document.body.style.cursor = 'col-resize'; });
+splitter.addEventListener('pointermove', e => {
+  if (!isDragging) return;
+  const rect = document.body.getBoundingClientRect();
+  let w = e.clientX - rect.left - 12;
+  w = Math.max(200, Math.min(800, w));
+  sidebar.style.width = w + 'px';
+});
+splitter.addEventListener('pointerup', e => { isDragging = false; try{ splitter.releasePointerCapture(e.pointerId); }catch(e){} document.body.style.cursor = ''; });
+
+/* ========== collapse sidebar ========== */
+collapseBtn.addEventListener('click', ()=>{
+  const willCollapsed = !sidebar.classList.contains('collapsed');
+  if (willCollapsed && currentExpandedDb) {
+    // Collapse any expanded DB when collapsing the sidebar
+    const prevBtn = currentExpandedDb.querySelector('button[data-expand]');
+    const prevCont = currentExpandedDb.querySelector('div[data-container]');
+    if (prevBtn) prevBtn.textContent = '▶';
+    if (prevCont) prevCont.style.display = 'none';
+    currentExpandedDb.classList.remove('saved-active');
+    currentExpandedDb = null;
+  }
+  sidebar.classList.toggle('collapsed');
+  const isCollapsed = sidebar.classList.contains('collapsed');
+  collapseBtn.textContent = isCollapsed ? '▶' : '◀';
+  // Hide/show sidebar content when collapsed/expanded
+  const fileInfoEl = sidebar.querySelector('.file-info');
+  const savedDbsEl = document.getElementById('savedSection');
+  if (isCollapsed) {
+    fileInfoEl.style.display = 'none';
+    savedDbsEl.style.display = 'none';
+  } else {
+    // When expanded show fileInfo and the saved DBs list (loadSaved will populate it)
+    fileInfoEl.style.display = '';
+    savedDbsEl.style.display = '';
+  }
+  // If expanding, refresh saved DB list to ensure entries are visible
+  if (!isCollapsed){
+    setTimeout(()=>{ loadSaved().catch(()=>{}); adjustTableInnerHeight(); }, 120);
+  } else {
+    // if collapsing, adjust layout too
+    setTimeout(adjustTableInnerHeight, 120);
+  }
+});
+
+/* ========== theme toggle ========== */
+themeToggle.addEventListener('click', ()=>{
+  const html = document.documentElement;
+  const currentTheme = html.getAttribute('data-theme');
+  const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+  html.setAttribute('data-theme', newTheme);
+  themeToggle.textContent = newTheme === 'dark' ? '☀️' : '🌙';
+  localStorage.setItem('db-browser-theme', newTheme);
+});
+
+// Load saved theme
+const savedTheme = localStorage.getItem('db-browser-theme') || 'light';
+document.documentElement.setAttribute('data-theme', savedTheme);
+themeToggle.textContent = savedTheme === 'dark' ? '☀️' : '🌙';
+function triggerUpload(){
+  // fallback upload flow: open native file picker via hidden input posted to /db/upload
+  const inp = document.createElement('input'); inp.type='file'; inp.accept='.db,.sqlite'; inp.addEventListener('change', async ()=> {
+    if (!inp.files || inp.files.length===0) return;
+    const f = inp.files[0]; const fd = new FormData(); fd.append('dbfile', f);
+    status.textContent = '';
+    const statusDiv = document.createElement('div');
+    statusDiv.innerHTML = '<span class="loading-spinner"></span>Uploading...';
+    status.appendChild(statusDiv);
+    try{
+      const r = await fetch('/db/upload', { method:'POST', body: fd });
+      if (!r.ok) throw new Error(await r.text());
+      const js = await r.json();
+      currentDbId = js.id; fileInfo.textContent = `Loaded: ${js.name}`; status.textContent = '';
+      await loadTables(); await loadSaved();
+    }catch(e){ status.textContent = 'Upload failed: ' + e.message; showToast('Upload failed: ' + e.message, 'error'); }
+  });
+  inp.click();
+}
+addDbBtn.addEventListener('click', triggerUpload);
+
+clearQuery.addEventListener('click', ()=>{ querySql.value=''; querySql.focus(); });
+formatQuery.addEventListener('click', ()=>{ /* optional: integrate sql-formatter library; simple tidy: trim + single space */ querySql.value = querySql.value.trim().replace(/\s+/g,' '); });
+
+/* ========== initial UI housekeeping ========== */
+// load table list when a saved DB gets expanded -> loadTables handled there
+// but also attempt to auto-open first saved DB on load
+async function tryOpenFirstSaved(){
+  try{
+    // Wait for loadSaved to complete so savedList is populated
+    await loadSaved();
+    // small delay to allow DOM insertion
+    setTimeout(() => {
+      const firstDbEntry = savedList.children[0];
+      if (firstDbEntry) {
+        const expandBtn = firstDbEntry.querySelector('button[data-expand]');
+        if (expandBtn) expandBtn.click();
+      }
+    }, 120);
+  }catch(e){}
+}
+tryOpenFirstSaved();
+
+/* ========== layout adjustment: ensure results area gets explicit height for inner scroll ====== */
+function adjustTableInnerHeight(){
+  const tableWrap = document.querySelector('.table-wrap');
+  const tableInner = document.querySelector('.table-inner');
+  if (!tableWrap || !tableInner) return;
+  // compute available height below the top of the tableWrap to the bottom of the viewport
+  const rect = tableWrap.getBoundingClientRect();
+  const bottomSpace = window.innerHeight - rect.top;
+  // subtract small margin to account for body padding and visual spacing
+  const desired = Math.max(120, bottomSpace - 24);
+  tableInner.style.height = desired + 'px';
+}
+
+// Run on load and on resize
+window.addEventListener('resize', adjustTableInnerHeight);
+window.addEventListener('load', adjustTableInnerHeight);
+
+// Also adjust when sidebar toggles or splitter finishes dragging
+collapseBtn.addEventListener('click', () => { setTimeout(adjustTableInnerHeight, 120); });
+splitter.addEventListener('pointerup', () => { setTimeout(adjustTableInnerHeight, 50); });
+
+// Keep collapse button visible by moving it to the document body and positioning it fixed
+// Ensure adjust after rendering tables
+// (keep original renderTable behavior; adjustTableInnerHeight is called elsewhere)
+
+/* ========== accessibility / keyboard handling ========== */
+document.addEventListener('keydown', (e)=>{
+  // Ctrl/Cmd + Enter to run query
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+    e.preventDefault();
+    runQuery.click();
+    return;
+  }
+  // Ctrl/Cmd + L to clear query
+  if ((e.ctrlKey || e.metaKey) && e.key === 'l') {
+    e.preventDefault();
+    clearQuery.click();
+    return;
+  }
+  // Ctrl/Cmd + Shift + F to format query
+  if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'F') {
+    e.preventDefault();
+    formatQuery.click();
+    return;
+  }
+  // Escape to collapse sidebar if expanded
+  if (e.key === 'Escape' && !sidebar.classList.contains('collapsed')) {
+    e.preventDefault();
+    if (currentExpandedDb) {
+      // Collapse any expanded DB when collapsing the sidebar
+      const prevBtn = currentExpandedDb.querySelector('button[data-expand]');
+      const prevCont = currentExpandedDb.querySelector('div[data-container]');
+      if (prevBtn) prevBtn.textContent = '▶';
+      if (prevCont) prevCont.style.display = 'none';
+      currentExpandedDb.classList.remove('saved-active');
+      currentExpandedDb = null;
+    }
+    sidebar.classList.add('collapsed');
+    collapseBtn.textContent = '▶';
+  // Hide sidebar content
+  const fileInfoEl = sidebar.querySelector('.file-info');
+  const savedDbsEl = document.getElementById('savedSection');
+  fileInfoEl.style.display = 'none';
+  if (savedDbsEl) savedDbsEl.style.display = 'none';
+    setTimeout(adjustTableInnerHeight, 120);
+  }
+});
+
 </script>
 </body>
 </html>
