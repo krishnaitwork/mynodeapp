@@ -260,7 +260,7 @@
           <div class="small">DBs</div>
           <div style="display:flex;gap:8px;align-items:center">
             <button id="scanSaved" class="text-small">Refresh</button>
-            <button id="addDbBtn" class="text-small">➕ Add</button>
+            <button id="addDbBtn" class="text-small">➕ Upload</button>
           </div>
         </div>
         <div id="savedList" class="small"></div>
@@ -280,7 +280,8 @@
         <div class="controls-col">
           <div class="controls-row">
             <label>Limit: <input id="rowLimit" type="number" value="200" min="1" max="2000" /></label>
-            <button id="themeToggle" class="text-small" title="Toggle dark mode">🌙</button>
+              <button id="themeToggle" class="text-small" title="Toggle dark mode">🌙</button>
+              <button id="browseDb" class="text-small" title="Browse and upload a DB">📂 Browse</button>
           </div>
 
           <div class="buttons-vertical">
@@ -392,9 +393,9 @@ async function loadSaved(){
     if (list.length === 0) { savedList.innerHTML = '<div class="small muted">No saved DBs</div>'; return; }
     savedList.innerHTML = '';
     for (const d of list){
-  const wrapper = document.createElement('div'); wrapper.className = 'saved-entry'; wrapper.style.borderBottom='1px solid var(--border)'; wrapper.style.padding='6px 4px';
+  const wrapper = document.createElement('div'); wrapper.className = 'saved-entry'; wrapper.style.borderBottom='1px solid var(--border)'; wrapper.style.padding='6px 4px'; wrapper.dataset.id = d.id;
   const hdr = document.createElement('div'); hdr.className = 'hdr-row';
-  const left = document.createElement('div'); left.className = 'hdr-left'; left.innerHTML = `<strong>${d.label}</strong><div class="small muted" style="margin-top:2px">${d.addedAt? new Date(d.addedAt).toLocaleString():''}</div>`;
+  const left = document.createElement('div'); left.className = 'hdr-left'; left.innerHTML = `<strong>${d.label}</strong><div class="small muted" style="margin-top:2px">${d.lastOpened ? 'Last: ' + new Date(d.lastOpened).toLocaleString() : (d.addedAt ? new Date(d.addedAt).toLocaleString() : '')}</div>`;
   const actions = document.createElement('div'); actions.className = 'hdr-actions';
   const expandBtn = document.createElement('button'); expandBtn.textContent = '▶'; expandBtn.title='Open tables'; expandBtn.dataset.expand = '1'; expandBtn.className = 'btn-compact';
   actions.appendChild(expandBtn);
@@ -773,13 +774,159 @@ function triggerUpload(){
       if (!r.ok) throw new Error(await r.text());
       const js = await r.json();
       currentDbId = js.id; fileInfo.textContent = `Loaded: ${js.name}`; status.textContent = '';
-      await loadTables(); await loadSaved();
+      // Refresh saved list and try to open the newly uploaded entry
+      await loadSaved();
+      // find the saved entry and click its expand button
+      setTimeout(()=>{
+        const entry = Array.from(savedList.children).find(c => c && c.querySelector && c.querySelector('.hdr-left strong') && c.querySelector('.hdr-left strong').textContent === js.name);
+        if (entry) { const btn = entry.querySelector('button[data-expand]'); if (btn) btn.click(); }
+      }, 120);
     }catch(e){ status.textContent = 'Upload failed: ' + e.message; showToast('Upload failed: ' + e.message, 'error'); }
   });
   inp.click();
 }
 addDbBtn.addEventListener('click', triggerUpload);
 
+// top browse button triggers upload flow
+const browseDb = document.getElementById('browseDb');
+browseDb.addEventListener('click', triggerUpload);
+
+// ----- File picker modal UI -----
+// create modal elements
+const filePickerModal = document.createElement('div'); filePickerModal.id='filePickerModal';
+filePickerModal.style.position='fixed'; filePickerModal.style.left='0'; filePickerModal.style.top='0'; filePickerModal.style.right='0'; filePickerModal.style.bottom='0'; filePickerModal.style.display='none'; filePickerModal.style.alignItems='center'; filePickerModal.style.justifyContent='center'; filePickerModal.style.background='rgba(0,0,0,0.35)'; filePickerModal.style.zIndex='1200';
+const modalCard = document.createElement('div'); modalCard.style.width='560px'; modalCard.style.maxHeight='70vh'; modalCard.style.overflow='auto'; modalCard.style.background='var(--surface)'; modalCard.style.border='1px solid var(--border)'; modalCard.style.borderRadius='8px'; modalCard.style.padding='12px';
+const modalHeader = document.createElement('div'); modalHeader.style.display='flex'; modalHeader.style.justifyContent='space-between'; modalHeader.style.alignItems='center';
+const titleWrap = document.createElement('div'); titleWrap.innerHTML = `<strong>Select a database file</strong>`;
+// root selector removed
+const modalClose = document.createElement('button'); modalClose.className='text-small'; modalClose.textContent='Close'; modalClose.style.marginLeft='8px'; modalClose.addEventListener('click', ()=>{ filePickerModal.style.display='none'; });
+modalHeader.appendChild(titleWrap);
+modalHeader.appendChild(modalClose);
+const modalBody = document.createElement('div'); modalBody.style.marginTop='8px';
+const dirLabel = document.createElement('div'); dirLabel.textContent = 'Set directory location:'; dirLabel.style.marginBottom='6px';
+const dirInput = document.createElement('input'); dirInput.type='text'; dirInput.placeholder='e.g., C:\\Users\\YourName\\Documents'; dirInput.style.marginBottom='6px'; dirInput.style.width='100%'; dirInput.style.padding='6px'; dirInput.style.border='1px solid var(--border)'; dirInput.style.borderRadius='6px';
+const listBtn = document.createElement('button'); listBtn.className='text-small'; listBtn.textContent='List DB files'; listBtn.style.marginBottom='12px';
+modalBody.appendChild(dirLabel); modalBody.appendChild(dirInput); modalBody.appendChild(listBtn);
+listBtn.addEventListener('click', async () => {
+  const dir = dirInput.value.trim();
+  if (!dir) return showToast('Enter a directory path', 'warning');
+  filesContainer.innerHTML = '<div class="small muted">Loading files…</div>';
+  try {
+    const qs = new URLSearchParams(); qs.set('root', 'fs'); qs.set('subpath', dir);
+    const r = await fetch('/api/files?' + qs.toString());
+    if (!r.ok) throw new Error(await r.text());
+    const js = await r.json(); const entries = js.entries || [];
+    filesContainer.innerHTML = '';
+    const dbFiles = entries.filter(e => e.type === 'file' && ['db', 'sqlite', 'sqlite3'].includes(e.name.split('.').pop().toLowerCase()));
+    if (dbFiles.length === 0) { filesContainer.innerHTML = '<div class="small muted">No .db/.sqlite files found in this directory</div>'; return; }
+    for (const e of dbFiles) {
+      const el = document.createElement('div'); el.style.display='flex'; el.style.justifyContent='space-between'; el.style.alignItems='center'; el.style.padding='6px'; el.style.border='1px solid var(--border)'; el.style.borderRadius='6px';
+      const left = document.createElement('div'); left.innerHTML = `<div><strong>${e.name}</strong></div>`;
+      const right = document.createElement('div');
+      const addBtn = document.createElement('button'); addBtn.className='text-small'; addBtn.textContent='Add';
+      addBtn.addEventListener('click', async () => {
+        try {
+          const label = prompt('Optional label for this DB (leave blank to use filename):', '');
+          const dbId = filePickerModal.dataset.dbId;
+          if (dbId) {
+            const idx = config.databases.findIndex(d => d.id === dbId);
+            if (idx !== -1) {
+              config.databases[idx].path = e.fullPath;
+              config.databases[idx].lastOpened = new Date().toISOString();
+              saveConfig(config);
+              dbMap.get(dbId).path = e.fullPath;
+              await loadSaved();
+            }
+            filePickerModal.style.display='none';
+          } else {
+            const r2 = await fetch('/api/databases', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: e.fullPath, label }) });
+            if (!r2.ok) throw new Error(await r2.text());
+            showToast('Database registered');
+            filePickerModal.style.display='none';
+            await loadSaved();
+          }
+        } catch (err) { showToast('Failed to add file: ' + err.message, 'error'); }
+      });
+      const tempBtn = document.createElement('button'); tempBtn.className='text-small'; tempBtn.textContent='Open Temp';
+      tempBtn.addEventListener('click', async () => {
+        try {
+          const label = 'temp' + e.name;
+          const dbId = filePickerModal.dataset.dbId;
+          if (dbId) {
+            showToast('Temporary open not supported for reattaching', 'warning');
+            return;
+          } else {
+            const r2 = await fetch('/api/databases', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: e.fullPath, label, temporary: true }) });
+            if (!r2.ok) throw new Error(await r2.text());
+            showToast('Temporary database opened');
+            filePickerModal.style.display='none';
+            await loadSaved();
+          }
+        } catch (err) { showToast('Failed to open temp: ' + err.message, 'error'); }
+      });
+      right.appendChild(addBtn);
+      right.appendChild(tempBtn);
+      el.appendChild(left); el.appendChild(right);
+      filesContainer.appendChild(el);
+    }
+  } catch (e) { filesContainer.innerHTML = '<div class="small muted">Failed to list files</div>'; showToast('Failed to list files: ' + e.message, 'error'); }
+});
+const filesContainer = document.createElement('div'); filesContainer.id='filesContainer'; filesContainer.style.display='grid'; filesContainer.style.gridTemplateColumns='1fr'; filesContainer.style.gap='6px';
+modalBody.appendChild(filesContainer);
+const pathLabel = document.createElement('div'); pathLabel.textContent = 'Or enter the full path manually:'; pathLabel.style.marginBottom='6px'; pathLabel.style.marginTop='12px';
+modalBody.appendChild(pathLabel);
+const modalFooter = document.createElement('div'); modalFooter.style.marginTop='8px'; modalFooter.style.display='flex'; modalFooter.style.justifyContent='space-between';
+// left: absolute path register
+const registerWrap = document.createElement('div'); registerWrap.style.display='flex'; registerWrap.style.gap='6px'; registerWrap.style.alignItems='center';
+const pathInput = document.createElement('input'); pathInput.type='text'; pathInput.placeholder='Absolute path to DB (server)'; pathInput.style.padding='6px'; pathInput.style.border='1px solid var(--border)'; pathInput.style.borderRadius='6px'; pathInput.style.minWidth='320px';
+const registerBtn = document.createElement('button'); registerBtn.className='text-small'; registerBtn.textContent='Register path';
+registerWrap.appendChild(pathInput); registerWrap.appendChild(registerBtn);
+modalFooter.appendChild(registerWrap);
+modalCard.appendChild(modalHeader); modalCard.appendChild(modalBody); modalCard.appendChild(modalFooter);
+filePickerModal.appendChild(modalCard); document.body.appendChild(filePickerModal);
+
+function openFilePicker(dbId = null){
+  filePickerModal.style.display = 'flex';
+  filePickerModal.dataset.dbId = dbId;
+  if (dbId) {
+    const entry = config.databases.find(d => d.id === dbId);
+    if (entry && entry.path) {
+      const pathParts = entry.path.split(/[\\/]/);
+      pathParts.pop();
+      dirInput.value = pathParts.join('\\');
+    }
+  }
+}
+
+function pathSep(){ return navigator.platform && navigator.platform.indexOf('Win') === 0 ? '\\' : '/'; }
+
+
+// Register absolute path from input
+registerBtn.addEventListener('click', async ()=>{
+  const p = pathInput.value && pathInput.value.trim();
+  if (!p) return showToast('Enter a path to register', 'warning');
+  const dbId = filePickerModal.dataset.dbId;
+  if (dbId) {
+    const idx = config.databases.findIndex(d => d.id === dbId);
+    if (idx !== -1) {
+      config.databases[idx].path = p;
+      config.databases[idx].lastOpened = new Date().toISOString();
+      saveConfig(config);
+      dbMap.get(dbId).path = p;
+      await loadSaved();
+    }
+    filePickerModal.style.display='none';
+  } else {
+    try{
+      const r = await fetch('/api/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: p, label: '' }) });
+      if (!r.ok) throw new Error(await r.text());
+      const js = await r.json();
+      showToast('Registered ' + js.entry.label);
+      filePickerModal.style.display='none';
+      await loadSaved();
+    }catch(e){ showToast('Failed to register path: ' + e.message, 'error'); }
+  }
+});
 clearQuery.addEventListener('click', ()=>{ querySql.value=''; querySql.focus(); });
 formatQuery.addEventListener('click', ()=>{ /* optional: integrate sql-formatter library; simple tidy: trim + single space */ querySql.value = querySql.value.trim().replace(/\s+/g,' '); });
 

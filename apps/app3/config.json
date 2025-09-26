@@ -1,18 +1,11 @@
 {
   "databases": [
     {
-      "id": "1758718427762-ne8p3v",
-      "label": "siteprobe.db",
-      "path": "C:\\KP\\Git\\nodejs\\mynodeapp\\apps\\app3\\uploads\\1758718427762-ne8p3v.db",
-      "addedAt": "2025-09-24T12:53:47.764Z",
-      "lastOpened": "2025-09-24T12:53:47.764Z"
-    },
-    {
-      "id": "1758719300438-xlc9of",
+      "id": "1758774904842-s0dktp",
       "label": "webprobe.db",
-      "path": "C:\\KP\\Git\\nodejs\\mynodeapp\\apps\\app3\\uploads\\1758719300438-xlc9of.db",
-      "addedAt": "2025-09-24T13:08:20.439Z",
-      "lastOpened": "2025-09-24T13:08:20.439Z"
+      "path": "C:\\KP\\Git\\nodejs\\mynodeapp\\apps\\app3\\uploads\\1758774904842-s0dktp.db",
+      "addedAt": "2025-09-25T04:35:04.843Z",
+      "lastOpened": "2025-09-25T04:35:04.843Z"
     }
   ]
 }

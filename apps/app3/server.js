@@ -43,7 +43,7 @@ const dbMap = new Map();
 for (const entry of (config.databases||[])){
   try{
     if (entry.path && fs.existsSync(entry.path)){
-      dbMap.set(entry.id, { path: entry.path, name: entry.label || path.basename(entry.path), meta: entry });
+      dbMap.set(entry.id, { id: entry.id, path: entry.path, name: entry.label || path.basename(entry.path), meta: entry });
     }
   }catch(e){/* ignore */}
 }
@@ -73,35 +73,120 @@ app.post('/db/upload', upload.single('dbfile'), (req, res) => {
 
 // GET saved databases
 app.get('/api/databases', (req, res) => {
-  res.json({ databases: config.databases || [] });
+  const dbs = Array.from(dbMap.values()).map(db => ({ id: db.id, label: db.name, path: db.path, lastOpened: db.meta?.lastOpened }));
+  res.json({ databases: dbs });
+});
+
+// List files under allowed directories for client-side file picker (safe whitelist)
+app.get('/api/files', (req, res) => {
+  try {
+    // whitelist of allowed roots for browsing
+    const roots = {
+      uploads: uploadsDir,
+      app: __dirname
+    };
+    const root = String(req.query.root || 'uploads');
+    const subpath = String(req.query.subpath || '');
+    let rootAbs;
+    let target;
+    if (root === 'fs') {
+      // full filesystem browsing - only enabled when env var explicitly set
+      if (String(process.env.ALLOW_BROWSE_ALL || '') !== '1') return res.status(403).json({ error: 'filesystem browsing disabled' });
+      // allow subpath to be absolute or relative; resolve to absolute
+      target = path.resolve(subpath || path.sep);
+      // on Windows, path.sep might be '\\', ensure target normalized
+      rootAbs = path.parse(target).root; // e.g., C:\
+    } else {
+      if (!roots[root]) return res.status(400).json({ error: 'invalid root' });
+      rootAbs = path.resolve(roots[root]);
+      target = path.resolve(path.join(rootAbs, subpath));
+      // ensure target remains inside root (prevent escaping)
+      if (!target.startsWith(rootAbs)) return res.status(400).json({ error: 'forbidden' });
+    }
+
+    const entries = [];
+    const dirents = fs.readdirSync(target, { withFileTypes: true });
+    for (const d of dirents) {
+      if (d.isDirectory()) {
+        entries.push({ name: d.name, type: 'dir', root, relPath: path.relative(rootAbs, path.join(target, d.name)), fullPath: path.join(target, d.name) });
+      } else if (d.isFile()) {
+        const ext = path.extname(d.name).toLowerCase();
+        // include sqlite-like files; include others as hidden by default
+        const isDb = ['.db', '.sqlite', '.sqlite3'].includes(ext);
+        entries.push({ name: d.name, type: isDb ? 'file' : 'other', root, relPath: path.relative(rootAbs, path.join(target, d.name)), fullPath: path.join(target, d.name) });
+      }
+    }
+
+    // sort directories first then files
+    entries.sort((a,b)=>{
+      if (a.type === b.type) return a.name.localeCompare(b.name);
+      return a.type === 'dir' ? -1 : 1;
+    });
+
+    const parentAllowed = target !== rootAbs;
+    res.json({ root, subpath, parentAllowed, entries });
+  } catch (e) {
+    console.error('list files error', e);
+    res.status(500).json({ error: 'failed to list files' });
+  }
 });
 
 // Add an existing DB by path (server-side), or create metadata record
 app.post('/api/databases', (req, res) => {
-  const { id, path: p, label } = req.body;
+  const { id, path: p, label, temporary } = req.body;
   if (!p) return res.status(400).json({ error: 'path required' });
   const realPath = path.isAbsolute(p) ? p : path.join(__dirname, p);
   if (!fs.existsSync(realPath)) return res.status(400).json({ error: 'file not found' });
   const nid = id || `${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
   const entry = { id: nid, label: label || path.basename(realPath), path: realPath, addedAt: new Date().toISOString() };
-  config.databases = config.databases || [];
-  config.databases.push(entry);
-  saveConfig(config);
-  dbMap.set(nid, { path: realPath, name: entry.label });
+  if (!temporary) {
+    config.databases = config.databases || [];
+    config.databases.push(entry);
+    saveConfig(config);
+  }
+  dbMap.set(nid, { id: nid, path: realPath, name: entry.label });
   res.json({ ok: true, entry });
+});
+
+// Register an arbitrary server-side DB path (no copying). Validates and persists path in config.json
+app.post('/api/register', (req, res) => {
+  const p = req.body && req.body.path ? String(req.body.path) : '';
+  const label = req.body && req.body.label ? String(req.body.label) : '';
+  if (!p) return res.status(400).json({ error: 'path required' });
+  const realPath = path.isAbsolute(p) ? p : path.resolve(p);
+  try{
+    if (!fs.existsSync(realPath)) return res.status(400).json({ error: 'file not found' });
+    const stat = fs.statSync(realPath);
+    if (!stat.isFile()) return res.status(400).json({ error: 'not a file' });
+    const ext = path.extname(realPath).toLowerCase();
+    if (!['.db','.sqlite','.sqlite3'].includes(ext)) return res.status(400).json({ error: 'unsupported file type' });
+    // Attempt to open read-only to validate sqlite file quickly
+    try{
+      const testDb = new sqlite3.Database(realPath, sqlite3.OPEN_READONLY, (err)=>{ if (err) {/* ignore open error - still allow registration */} testDb.close(); });
+    }catch(e){ /* ignore */ }
+    const nid = `${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
+    const entry = { id: nid, label: label || path.basename(realPath), path: realPath, addedAt: new Date().toISOString(), lastOpened: new Date().toISOString() };
+    config.databases = config.databases || [];
+    config.databases.push(entry);
+    saveConfig(config);
+    dbMap.set(nid, { path: realPath, name: entry.label, meta: entry });
+    res.json({ ok: true, entry });
+  }catch(e){ console.error('register error', e); res.status(500).json({ error: 'failed to register' }); }
 });
 
 // Update metadata (label) for a saved DB
 app.put('/api/databases/:id', (req, res) => {
   const id = req.params.id; const { label } = req.body;
+  const db = dbMap.get(id);
+  if (!db) return res.status(404).json({ error: 'not found' });
+  if (label) db.name = label;
   const idx = (config.databases||[]).findIndex(d => d.id === id);
-  if (idx === -1) return res.status(404).json({ error: 'not found' });
-  if (label) config.databases[idx].label = label;
-  config.databases[idx].lastOpened = new Date().toISOString();
-  saveConfig(config);
-  const entry = config.databases[idx];
-  if (dbMap.has(id)) dbMap.get(id).name = entry.label;
-  res.json({ ok: true, entry });
+  if (idx !== -1) {
+    config.databases[idx].label = label;
+    config.databases[idx].lastOpened = new Date().toISOString();
+    saveConfig(config);
+  }
+  res.json({ ok: true, entry: { id, label: db.name, path: db.path } });
 });
 
 // Delete saved DB entry (only remove file if inside uploadsDir)
